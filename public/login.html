@@ -37,6 +37,9 @@
         Se connecter
       </button>
     </form>
+
+    <div class="login-divider" id="ssoDivider" style="display:none"><span>ou</span></div>
+    <button type="button" class="btn btn-ghost login-submit" id="ssoBtn" style="display:none"></button>
   </div>
 
   <script>
@@ -44,6 +47,23 @@
       const input = document.getElementById('password');
       input.type = input.type === 'password' ? 'text' : 'password';
     });
+
+    (async () => {
+      if (new URLSearchParams(window.location.search).get('error') === 'oidc') {
+        document.getElementById('loginError').textContent = 'Échec de la connexion SSO. Réessayez ou utilisez le mot de passe.';
+      }
+      try {
+        const res = await fetch('/api/auth/methods');
+        const methods = await res.json();
+        if (methods.oidc) {
+          const btn = document.getElementById('ssoBtn');
+          btn.textContent = `Se connecter avec ${methods.oidcLabel}`;
+          btn.style.display = '';
+          document.getElementById('ssoDivider').style.display = '';
+          btn.addEventListener('click', () => { window.location.href = '/auth/oidc/login'; });
+        }
+      } catch {}
+    })();
 
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
       e.preventDefault();

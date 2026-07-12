@@ -17,6 +17,18 @@ const UPTIME_FILE  = path.join(__dirname, 'data', 'uptime.json');
 const SESSION_DIR  = path.join(__dirname, 'data', 'sessions');
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
 
+// ── OIDC config (optional SSO) ────────────────────────────────────────────────
+const OIDC_ISSUER_URL    = process.env.OIDC_ISSUER_URL;
+const OIDC_CLIENT_ID     = process.env.OIDC_CLIENT_ID;
+const OIDC_CLIENT_SECRET = process.env.OIDC_CLIENT_SECRET;
+const OIDC_REDIRECT_URI  = process.env.OIDC_REDIRECT_URI;
+const OIDC_SCOPE         = process.env.OIDC_SCOPE || 'openid profile email';
+const OIDC_DISPLAY_NAME  = process.env.OIDC_DISPLAY_NAME || 'SSO';
+const OIDC_ALLOW_INSECURE = process.env.OIDC_ALLOW_INSECURE === 'true';
+const OIDC_ENABLED = !!(OIDC_ISSUER_URL && OIDC_CLIENT_ID && OIDC_CLIENT_SECRET && OIDC_REDIRECT_URI);
+let oidcModule = null;
+let oidcConfig = null;
+
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 app.use(express.json());
@@ -32,6 +44,8 @@ app.use(session({
 app.use((req, res, next) => {
   if (/\.(css|js|png|ico|jpg|svg|woff2?)$/.test(req.path)) return next();
   if (req.path === '/login' || req.path === '/api/auth/login') return next();
+  if (req.path === '/api/auth/methods') return next();
+  if (req.path === '/auth/oidc/login' || req.path === '/auth/oidc/callback') return next();
   if (req.session?.authenticated) return next();
   if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Non authentifié' });
   res.redirect('/login');
@@ -93,11 +107,13 @@ function migrateTokenEncryption() {
 
 migrateTokenEncryption();
 
+const DEFAULT_CONFIG = { webhookUrl: null, webhookType: 'slack', webhookEnvironments: [], uptimeRetention: 288 };
+
 function loadConfig() {
   try {
-    if (fs.existsSync(CONFIG_FILE)) return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+    if (fs.existsSync(CONFIG_FILE)) return { ...DEFAULT_CONFIG, ...JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) };
   } catch {}
-  return { webhookUrl: null, webhookType: 'slack' };
+  return { ...DEFAULT_CONFIG };
 }
 
 function saveConfig(config) {
@@ -106,7 +122,6 @@ function saveConfig(config) {
 
 // ── Uptime tracking (in-memory + flush to disk every 5 min) ──────────────────
 let uptimeStore = {};
-const MAX_UPTIME = 288; // ~2.4h at 30s intervals
 
 try {
   if (fs.existsSync(UPTIME_FILE))
@@ -116,10 +131,11 @@ try {
 let uptimeDirty = false;
 
 function recordUptime(id, online) {
+  const maxPoints = loadConfig().uptimeRetention || DEFAULT_CONFIG.uptimeRetention;
   if (!uptimeStore[id]) uptimeStore[id] = [];
   uptimeStore[id].push({ ts: Date.now(), online });
-  if (uptimeStore[id].length > MAX_UPTIME)
-    uptimeStore[id] = uptimeStore[id].slice(-MAX_UPTIME);
+  if (uptimeStore[id].length > maxPoints)
+    uptimeStore[id] = uptimeStore[id].slice(-maxPoints);
   uptimeDirty = true;
 }
 
@@ -135,6 +151,7 @@ const statusCache = {};
 async function sendWebhook(id, name, online, url, environment) {
   const config = loadConfig();
   if (!config.webhookUrl) return;
+  if (config.webhookEnvironments?.length && !config.webhookEnvironments.includes(environment)) return;
 
   const emoji = online ? '🟢' : '🔴';
   const statusText = online ? 'est revenue en ligne' : 'est passée hors ligne';
@@ -232,6 +249,7 @@ app.get('/login', (req, res) => {
 app.post('/api/auth/login', (req, res) => {
   if (req.body.password === ADMIN_PASSWORD) {
     req.session.authenticated = true;
+    req.session.user = { username: 'admin', method: 'local' };
     return res.json({ success: true });
   }
   res.status(401).json({ error: 'Mot de passe incorrect' });
@@ -241,13 +259,70 @@ app.post('/api/auth/logout', (req, res) => {
   req.session.destroy(() => res.json({ success: true }));
 });
 
+app.get('/api/auth/me', (req, res) => {
+  res.json(req.session?.user || null);
+});
+
+app.get('/api/auth/methods', (req, res) => {
+  res.json({ local: true, oidc: OIDC_ENABLED, oidcLabel: OIDC_DISPLAY_NAME });
+});
+
+// ── OIDC (SSO) ─────────────────────────────────────────────────────────────────
+app.get('/auth/oidc/login', async (req, res) => {
+  if (!OIDC_ENABLED || !oidcConfig) return res.status(503).send('OIDC non configuré');
+  try {
+    const code_verifier = oidcModule.randomPKCECodeVerifier();
+    const code_challenge = await oidcModule.calculatePKCECodeChallenge(code_verifier);
+    const state = oidcModule.randomState();
+    req.session.oidc = { code_verifier, state };
+    const redirectTo = oidcModule.buildAuthorizationUrl(oidcConfig, {
+      redirect_uri: OIDC_REDIRECT_URI,
+      scope: OIDC_SCOPE,
+      code_challenge,
+      code_challenge_method: 'S256',
+      state,
+    });
+    res.redirect(redirectTo.href);
+  } catch (e) {
+    console.error('[oidc] Échec de démarrage de connexion:', e.message);
+    res.redirect('/login?error=oidc');
+  }
+});
+
+app.get('/auth/oidc/callback', async (req, res) => {
+  if (!OIDC_ENABLED || !oidcConfig || !req.session.oidc) return res.redirect('/login?error=oidc');
+  try {
+    const currentUrl = new URL(req.originalUrl, `${req.protocol}://${req.get('host')}`);
+    const tokens = await oidcModule.authorizationCodeGrant(oidcConfig, currentUrl, {
+      pkceCodeVerifier: req.session.oidc.code_verifier,
+      expectedState: req.session.oidc.state,
+    });
+    const claims = tokens.claims();
+    delete req.session.oidc;
+    req.session.authenticated = true;
+    req.session.user = {
+      username: claims?.email || claims?.preferred_username || claims?.name || claims?.sub || 'utilisateur SSO',
+      method: 'oidc',
+    };
+    res.redirect('/');
+  } catch (e) {
+    console.error('[oidc] Échec de connexion:', e.message);
+    res.redirect('/login?error=oidc');
+  }
+});
+
 // ── Config (webhook) ──────────────────────────────────────────────────────────
 app.get('/api/config', (req, res) => res.json(loadConfig()));
 
 app.put('/api/config', (req, res) => {
+  const retention = parseInt(req.body.uptimeRetention, 10);
   const config = {
     webhookUrl:  req.body.webhookUrl  || null,
     webhookType: req.body.webhookType || 'slack',
+    webhookEnvironments: Array.isArray(req.body.webhookEnvironments)
+      ? req.body.webhookEnvironments.filter(e => VALID_ENVS.includes(e))
+      : [],
+    uptimeRetention: Number.isFinite(retention) ? Math.min(Math.max(retention, 10), 5000) : DEFAULT_CONFIG.uptimeRetention,
   };
   saveConfig(config);
   res.json(config);
@@ -272,6 +347,60 @@ app.post('/api/config/test-webhook', async (req, res) => {
   } catch (e) {
     res.status(502).json({ error: e.message });
   }
+});
+
+// ── Backup (export/import) ────────────────────────────────────────────────────
+app.get('/api/backup/export', (req, res) => {
+  const backup = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    instances: loadInstances(),
+    config: loadConfig(),
+  };
+  res.setHeader('Content-Disposition', `attachment; filename="portainer-manager-backup-${new Date().toISOString().slice(0, 10)}.json"`);
+  res.json(backup);
+});
+
+function normalizeImportedInstance(raw, existing) {
+  const url = raw.url ? String(raw.url).trim().replace(/\/$/, '') : null;
+  if (!url) return null;
+  const rawToken = raw.token ? String(raw.token) : null;
+  const token = rawToken ? (rawToken.startsWith('enc:') ? rawToken : encryptToken(rawToken)) : existing?.token;
+  if (!token) return null; // no way to reach this instance without a token
+
+  return {
+    id: (raw.id && typeof raw.id === 'string') ? raw.id : (existing?.id || uuidv4()),
+    name: (raw.name ? String(raw.name).trim() : '') || existing?.name || url,
+    url,
+    environment: VALID_ENVS.includes(raw.environment) ? raw.environment : (existing?.environment ?? null),
+    notes: raw.notes !== undefined ? (String(raw.notes).trim() || null) : (existing?.notes ?? null),
+    token,
+    createdAt: existing?.createdAt || raw.createdAt || new Date().toISOString(),
+  };
+}
+
+app.post('/api/backup/import', (req, res) => {
+  const { instances: incoming, config } = req.body;
+  if (!Array.isArray(incoming)) return res.status(400).json({ error: 'Format invalide : "instances" doit être un tableau' });
+
+  const current = loadInstances();
+  let added = 0, updated = 0, skipped = 0;
+
+  for (const raw of incoming) {
+    const existingIdx = current.findIndex(i => i.id === raw.id || i.url === (raw.url || '').trim().replace(/\/$/, ''));
+    const normalized = normalizeImportedInstance(raw, existingIdx !== -1 ? current[existingIdx] : null);
+    if (!normalized) { skipped++; continue; }
+    if (existingIdx !== -1) { current[existingIdx] = normalized; updated++; }
+    else { current.push(normalized); added++; }
+  }
+
+  saveInstances(current);
+
+  if (config && typeof config === 'object') {
+    saveConfig({ ...loadConfig(), ...config, webhookEnvironments: Array.isArray(config.webhookEnvironments) ? config.webhookEnvironments.filter(e => VALID_ENVS.includes(e)) : [] });
+  }
+
+  res.json({ success: true, added, updated, skipped });
 });
 
 // ── Uptime ────────────────────────────────────────────────────────────────────
@@ -401,21 +530,44 @@ app.get('/api/instances/:id/data', async (req, res) => {
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
-app.listen(PORT, '0.0.0.0', () => {
-  const hostIp = process.env.HOST_IP;
-  console.log(`\nPortainer Manager — port ${PORT}`);
-  console.log(`  Local:   http://localhost:${PORT}`);
-  if (hostIp) {
-    console.log(`  Network: http://${hostIp}:${PORT}`);
-  } else {
-    const { networkInterfaces } = require('os');
-    Object.values(networkInterfaces()).flat()
-      .filter(n => n.family === 'IPv4' && !n.internal)
-      .forEach(n => console.log(`  Network: http://${n.address}:${PORT}`));
+async function start() {
+  let oidcStatus = 'désactivé';
+  if (OIDC_ENABLED) {
+    try {
+      oidcModule = await import('openid-client');
+      const discoveryOptions = OIDC_ALLOW_INSECURE ? { execute: [oidcModule.allowInsecureRequests] } : undefined;
+      oidcConfig = await oidcModule.discovery(
+        new URL(OIDC_ISSUER_URL),
+        OIDC_CLIENT_ID,
+        OIDC_CLIENT_SECRET,
+        undefined,
+        discoveryOptions
+      );
+      oidcStatus = `activé (${OIDC_ISSUER_URL})`;
+    } catch (e) {
+      oidcStatus = `échec de la découverte — ${e.message}`;
+    }
   }
-  console.log(`  Mot de passe: ${ADMIN_PASSWORD === 'admin' ? 'admin ⚠️  (définir ADMIN_PASSWORD dans .env)' : '***'}`);
-  if (!process.env.SESSION_SECRET) {
-    console.log('  ⚠️  SESSION_SECRET non défini : les tokens Portainer chiffrés deviendront illisibles au prochain redémarrage.');
-  }
-  console.log('');
-});
+
+  app.listen(PORT, '0.0.0.0', () => {
+    const hostIp = process.env.HOST_IP;
+    console.log(`\nPortainer Manager — port ${PORT}`);
+    console.log(`  Local:   http://localhost:${PORT}`);
+    if (hostIp) {
+      console.log(`  Network: http://${hostIp}:${PORT}`);
+    } else {
+      const { networkInterfaces } = require('os');
+      Object.values(networkInterfaces()).flat()
+        .filter(n => n.family === 'IPv4' && !n.internal)
+        .forEach(n => console.log(`  Network: http://${n.address}:${PORT}`));
+    }
+    console.log(`  Mot de passe: ${ADMIN_PASSWORD === 'admin' ? 'admin ⚠️  (définir ADMIN_PASSWORD dans .env)' : '***'}`);
+    console.log(`  OIDC: ${oidcStatus}`);
+    if (!process.env.SESSION_SECRET) {
+      console.log('  ⚠️  SESSION_SECRET non défini : les tokens Portainer chiffrés deviendront illisibles au prochain redémarrage.');
+    }
+    console.log('');
+  });
+}
+
+start();

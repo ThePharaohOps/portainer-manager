@@ -9,6 +9,7 @@ const state = {
   sort: localStorage.getItem('sort') || 'name',
   view: localStorage.getItem('view') || 'grid',
   groupByEnv: localStorage.getItem('groupByEnv') === 'true',
+  refreshInterval: parseInt(localStorage.getItem('refreshInterval'), 10) || 30000,
   refreshTimer: null,
   countdown: 30,
   countdownTimer: null,
@@ -544,14 +545,51 @@ $('tokenToggle').addEventListener('click', () => {
   input.type = input.type === 'password' ? 'text' : 'password';
 });
 
-/* ── Settings modal (webhook) ──────────────────────────────────────────────── */
+/* ── Settings modal (webhook, affichage, uptime, SSO, sauvegarde) ────────────── */
+function renderWebhookEnvChecks(selected) {
+  const container = $('webhookEnvChecks');
+  container.innerHTML = Object.keys(ENV_LABELS).map(env => `
+    <label class="checkbox-chip ${selected.includes(env) ? 'checked' : ''}" data-env="${env}">
+      <input type="checkbox" value="${env}" ${selected.includes(env) ? 'checked' : ''} />
+      ${ENV_LABELS[env]}
+    </label>
+  `).join('');
+  container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', () => cb.closest('.checkbox-chip').classList.toggle('checked', cb.checked));
+  });
+}
+
+function getSelectedWebhookEnvs() {
+  return Array.from($('webhookEnvChecks').querySelectorAll('input:checked')).map(cb => cb.value);
+}
+
+async function loadSsoStatus() {
+  const el = $('ssoStatus');
+  el.textContent = 'Chargement…';
+  try {
+    const methods = await apiFetch('/api/auth/methods');
+    if (methods.oidc) {
+      el.innerHTML = `<span class="status-dot on"></span> Activé — <strong>${methods.oidcLabel}</strong> <a href="/auth/oidc/login" target="_blank" class="settings-hint" style="color:var(--primary)">Tester →</a>`;
+    } else {
+      el.innerHTML = `<span class="status-dot off"></span> Désactivé <span class="settings-hint">(variables OIDC_* absentes de .env)</span>`;
+    }
+  } catch {
+    el.textContent = 'Impossible de récupérer le statut';
+  }
+}
+
 async function openSettings() {
   $('settingsError').textContent = '';
+  $('refreshInterval').value = String(state.refreshInterval);
   try {
     const config = await apiFetch('/api/config');
     $('webhookUrl').value  = config.webhookUrl || '';
     $('webhookType').value = config.webhookType || 'slack';
+    renderWebhookEnvChecks(config.webhookEnvironments || []);
+    $('uptimeRetention').value = config.uptimeRetention || 288;
+    $('uptimeRetentionHint').textContent = `(~${Math.round((config.uptimeRetention || 288) * state.refreshInterval / 3600000 * 10) / 10}h au rythme actuel)`;
   } catch {}
+  loadSsoStatus();
   $('settingsOverlay').classList.add('open');
 }
 
@@ -562,10 +600,30 @@ $('settingsCancelBtn').addEventListener('click', closeSettings);
 $('settingsClose').addEventListener('click', closeSettings);
 $('settingsOverlay').addEventListener('click', e => { if (e.target === $('settingsOverlay')) closeSettings(); });
 
+$('uptimeRetention').addEventListener('input', () => {
+  const interval = parseInt($('refreshInterval').value, 10);
+  const points = parseInt($('uptimeRetention').value, 10) || 0;
+  $('uptimeRetentionHint').textContent = `(~${Math.round(points * interval / 3600000 * 10) / 10}h au rythme actuel)`;
+});
+
 $('saveSettingsBtn').addEventListener('click', async () => {
   $('settingsError').textContent = '';
   try {
-    await apiFetch('/api/config', { method: 'PUT', body: JSON.stringify({ webhookUrl: $('webhookUrl').value.trim(), webhookType: $('webhookType').value }) });
+    await apiFetch('/api/config', {
+      method: 'PUT',
+      body: JSON.stringify({
+        webhookUrl: $('webhookUrl').value.trim(),
+        webhookType: $('webhookType').value,
+        webhookEnvironments: getSelectedWebhookEnvs(),
+        uptimeRetention: parseInt($('uptimeRetention').value, 10) || 288,
+      }),
+    });
+    const newInterval = parseInt($('refreshInterval').value, 10);
+    if (newInterval !== state.refreshInterval) {
+      state.refreshInterval = newInterval;
+      localStorage.setItem('refreshInterval', String(newInterval));
+      scheduleRefresh();
+    }
     closeSettings();
     showToast('Paramètres enregistrés', 'success');
   } catch (e) { $('settingsError').textContent = e.message; }
@@ -579,7 +637,39 @@ $('testWebhookBtn').addEventListener('click', async () => {
     await apiFetch('/api/config/test-webhook', { method: 'POST', body: JSON.stringify({ webhookUrl: $('webhookUrl').value.trim(), webhookType: $('webhookType').value }) });
     showToast('Webhook testé avec succès !', 'success');
   } catch (e) { $('settingsError').textContent = 'Échec : ' + e.message; }
-  finally { btn.disabled = false; btn.textContent = 'Tester'; }
+  finally { btn.disabled = false; btn.textContent = 'Tester le webhook'; }
+});
+
+$('exportConfigBtn').addEventListener('click', async () => {
+  try {
+    const backup = await apiFetch('/api/backup/export');
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `portainer-manager-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    showToast('Sauvegarde exportée', 'success');
+  } catch (e) { $('settingsError').textContent = 'Échec de l\'export : ' + e.message; }
+});
+
+$('importConfigBtn').addEventListener('click', () => $('importConfigFile').click());
+
+$('importConfigFile').addEventListener('change', async () => {
+  const file = $('importConfigFile').files[0];
+  if (!file) return;
+  $('settingsError').textContent = '';
+  try {
+    const text = await file.text();
+    const backup = JSON.parse(text);
+    const result = await apiFetch('/api/backup/import', { method: 'POST', body: JSON.stringify(backup) });
+    showToast(`Import : ${result.added} ajoutée(s), ${result.updated} mise(s) à jour${result.skipped ? `, ${result.skipped} ignorée(s)` : ''}`, 'success');
+    closeSettings();
+    await loadInstances();
+  } catch (e) {
+    $('settingsError').textContent = 'Échec de l\'import : ' + e.message;
+  } finally {
+    $('importConfigFile').value = '';
+  }
 });
 
 /* ── Update guide modal ────────────────────────────────────────────────────── */
@@ -732,13 +822,18 @@ document.addEventListener('keydown', e => {
 /* ── Auto-refresh ──────────────────────────────────────────────────────────── */
 const countdownEl = $('refreshCountdown');
 
+function formatCountdown(seconds) {
+  if (seconds >= 60) return Math.ceil(seconds / 60) + 'min';
+  return seconds + 's';
+}
+
 function startCountdown() {
   clearInterval(state.countdownTimer);
-  state.countdown = 30;
-  countdownEl.textContent = '30s';
+  state.countdown = Math.round(state.refreshInterval / 1000);
+  countdownEl.textContent = formatCountdown(state.countdown);
   state.countdownTimer = setInterval(() => {
     state.countdown--;
-    countdownEl.textContent = state.countdown + 's';
+    countdownEl.textContent = formatCountdown(Math.max(state.countdown, 0));
     if (state.countdown <= 0) clearInterval(state.countdownTimer);
   }, 1000);
 }
@@ -749,7 +844,7 @@ function scheduleRefresh() {
   state.refreshTimer = setTimeout(async () => {
     await refreshAllLiveData();
     scheduleRefresh();
-  }, 30000);
+  }, state.refreshInterval);
 }
 
 /* ── Toast ─────────────────────────────────────────────────────────────────── */
@@ -766,7 +861,19 @@ function showToast(message, type = 'info') {
   }, 3500);
 }
 
+/* ── Current user ──────────────────────────────────────────────────────────── */
+async function loadCurrentUser() {
+  try {
+    const user = await apiFetch('/api/auth/me');
+    if (user?.username) {
+      const el = $('currentUser');
+      el.innerHTML = `Connecté en tant que <strong>${user.username}</strong>${user.method === 'oidc' ? ' (SSO)' : ''}`;
+      el.style.display = '';
+    }
+  } catch {}
+}
+
 /* ── Init ──────────────────────────────────────────────────────────────────── */
-Promise.all([fetchLatestVersion(), fetchUptime()])
+Promise.all([fetchLatestVersion(), fetchUptime(), loadCurrentUser()])
   .then(() => loadInstances())
   .then(() => scheduleRefresh());
