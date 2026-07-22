@@ -1,5 +1,9 @@
 # Portainer Manager
 
+[![Version](https://img.shields.io/github/v/tag/ThePharaohOps/portainer-manager?label=version&sort=semver)](https://github.com/ThePharaohOps/portainer-manager/tags)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-24--alpine-339933?logo=node.js&logoColor=white)](Dockerfile)
+
 Dashboard web sécurisé pour gérer plusieurs instances Portainer depuis une interface unique.
 
 ## Aperçu
@@ -17,6 +21,12 @@ Dashboard web sécurisé pour gérer plusieurs instances Portainer depuis une in
 
 **Paramètres**
 ![Paramètres](screenshots/settings-modal.png)
+
+**Journal d'audit**
+![Journal d'audit](screenshots/audit-log-modal.png)
+
+**Actions groupées**
+![Actions groupées](screenshots/bulk-toolbar.png)
 
 **Connexion**
 ![Page de connexion](screenshots/login.png)
@@ -51,6 +61,12 @@ Dashboard web sécurisé pour gérer plusieurs instances Portainer depuis une in
 - **Recherche** par nom ou URL
 - **Filtre** : Toutes / En ligne / Hors ligne / Mises à jour disponibles
 - **Export CSV** de l'état complet du parc
+- **Actions groupées** (admin) : sélectionner plusieurs instances pour changer leur environnement en masse ou exporter uniquement la sélection en CSV
+
+### Rôles et audit
+- **Rôle lecture seule (viewer)** optionnel via un claim/groupe OIDC : masque Ajouter/Modifier/Supprimer, Paramètres, Audit et les actions groupées — voir [Rôles admin/viewer (OIDC)](#rôles-adminviewer-oidc)
+- **Journal d'audit** (admin) : historique des créations/modifications/suppressions d'instances, changements de configuration, imports de sauvegarde et connexions — qui a fait quoi et quand
+- **Page de statut publique** en lecture seule, sans authentification (`/status`) : uniquement le nombre d'instances en ligne/hors ligne, sans détail sensible — pratique pour un écran mural
 
 ### Alertes webhook
 - Notification automatique quand une instance change de statut (online ↔ offline)
@@ -77,7 +93,7 @@ Dashboard web sécurisé pour gérer plusieurs instances Portainer depuis une in
 
 ## Prérequis
 
-- **Docker** (recommandé) — l'image utilise `node:24-alpine` (dernière LTS active)
+- **Docker** (recommandé) — l'image utilise `node:24-alpine` (dernière LTS active) et embarque un `HEALTHCHECK` (`docker ps` reflète l'état réel de l'app, utile derrière Swarm/Kubernetes/Traefik)
 - **ou** Node.js 18+ en local (minimum imposé par Express 5)
 
 ---
@@ -169,6 +185,27 @@ OIDC_DISPLAY_NAME=Entra ID
 Dans les deux cas, il faut déclarer `OIDC_REDIRECT_URI` comme URI de redirection autorisée côté fournisseur (type "Web"/"Authorization Code").
 
 > **Pourquoi pas LDAP ?** La seule bibliothèque LDAP viable pour Node.js (`ldapjs`, et tout ce qui en dépend comme `passport-ldapauth`) a été [officiellement décommissionnée](https://github.com/ldapjs/node-ldapjs) par son mainteneur, sans successeur maintenu. OIDC est privilégié car activement maintenu et couvre la quasi-totalité des annuaires d'entreprise modernes (y compris Active Directory via ADFS ou Entra ID).
+
+---
+
+## Rôles admin/viewer (OIDC)
+
+Par défaut, tout utilisateur authentifié (mot de passe local ou SSO) a un accès complet (**admin**). Il est possible de restreindre les utilisateurs SSO à un rôle **viewer** (lecture seule) selon un claim/groupe renvoyé par le fournisseur OIDC. Le mot de passe local reste toujours **admin**, quel que soit ce réglage.
+
+| Variable          | Défaut     | Description                                                                 |
+|-------------------|------------|-------------------------------------------------------------------------------|
+| `OIDC_ROLE_CLAIM`  | `groups`   | Nom du claim ID Token contenant les groupes/rôles de l'utilisateur           |
+| `OIDC_ADMIN_GROUP` | *(aucun)*  | Valeur du claim qui donne le rôle admin. Si absent, **tous les utilisateurs SSO sont admin** (comportement actuel inchangé) |
+
+Exemple — seuls les membres du groupe `portainer-admins` (Keycloak, Entra ID...) sont admin, les autres utilisateurs SSO sont en lecture seule :
+```env
+OIDC_ROLE_CLAIM=groups
+OIDC_ADMIN_GROUP=portainer-admins
+```
+
+Ce que le rôle **viewer** ne peut pas faire (masqué côté interface **et** rejeté côté API — 403) :
+- Ajouter / modifier / supprimer une instance, actions groupées
+- Accéder aux Paramètres (webhook, rétention, export/import) et au Journal d'audit
 
 ---
 
@@ -272,16 +309,19 @@ portainer-manager/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── LICENSE                # GPL-3.0
+├── CHANGELOG.md
 ├── .env                   # Variables d'environnement (ne pas committer)
 ├── screenshots/
 ├── data/
 │   ├── instances.json     # Instances sauvegardées, tokens chiffrés (créé automatiquement)
 │   ├── config.json        # Config webhook, filtre environnements, rétention uptime (créé automatiquement)
 │   ├── uptime.json        # Historique uptime (créé automatiquement)
+│   ├── audit.log          # Journal d'audit, JSONL append-only (créé automatiquement)
 │   └── sessions/          # Sessions persistées sur disque (créé automatiquement)
 └── public/
     ├── index.html         # Dashboard principal
     ├── login.html         # Page de connexion
+    ├── status.html        # Page de statut publique (sans authentification)
     ├── style.css
     └── app.js
 ```
@@ -295,30 +335,34 @@ portainer-manager/
 |---------|------------------------|----------------------------------|
 | POST    | `/api/auth/login`      | Connexion locale `{password}`    |
 | POST    | `/api/auth/logout`     | Déconnexion                      |
-| GET     | `/api/auth/me`         | Utilisateur connecté (`{username, method}` ou `null`) |
+| GET     | `/api/auth/me`         | Utilisateur connecté (`{username, method, role}` ou `null`) |
 | GET     | `/api/auth/methods`    | Méthodes de connexion disponibles (`{local, oidc, oidcLabel}`) |
 | GET     | `/auth/oidc/login`     | Redirige vers le fournisseur OIDC |
 | GET     | `/auth/oidc/callback`  | Callback OIDC (échange du code, création de session) |
 
-### Instances
+### Instances (admin)
 | Méthode | Route                        | Description                                        |
 |---------|------------------------------|----------------------------------------------------|
-| GET     | `/api/instances`             | Liste toutes les instances (sans token)            |
+| GET     | `/api/instances`             | Liste toutes les instances (sans token) — admin et viewer |
 | POST    | `/api/instances`             | Ajouter `{name, url, token, environment, notes}`   |
 | PUT     | `/api/instances/:id`         | Modifier `{name, url, token, environment, notes}`  |
 | DELETE  | `/api/instances/:id`         | Supprimer une instance                             |
-| GET     | `/api/instances/:id/data`    | Données live depuis l'API Portainer                |
+| GET     | `/api/instances/:id/data`    | Données live depuis l'API Portainer — admin et viewer |
 
 ### Divers
 | Méthode | Route                          | Description                            |
 |---------|--------------------------------|----------------------------------------|
-| GET     | `/api/uptime`                  | Historique uptime par instance         |
-| GET     | `/api/config`                  | Configuration (webhook, filtre environnements, rétention uptime) |
-| PUT     | `/api/config`                  | Modifier la configuration              |
-| POST    | `/api/config/test-webhook`     | Tester un webhook                      |
+| GET     | `/api/uptime`                  | Historique uptime par instance — admin et viewer |
+| GET     | `/api/config`                  | Configuration (webhook, filtre environnements, rétention uptime) — admin |
+| PUT     | `/api/config`                  | Modifier la configuration — admin      |
+| POST    | `/api/config/test-webhook`     | Tester un webhook — admin              |
 | GET     | `/api/portainer/latest-version`| Dernière version CE (cache 1h)         |
-| GET     | `/api/backup/export`           | Exporter la configuration complète (JSON) |
-| POST    | `/api/backup/import`           | Importer une sauvegarde (upsert par id/URL) |
+| GET     | `/api/app/version`             | Version de l'app et dernière version disponible sur GitHub (`{current, latest}`, cache 1h) |
+| GET     | `/api/backup/export`           | Exporter la configuration complète (JSON) — admin |
+| POST    | `/api/backup/import`           | Importer une sauvegarde (upsert par id/URL) — admin |
+| GET     | `/api/audit`                   | 200 dernières entrées du journal d'audit — admin |
+| GET     | `/status`                      | Page de statut publique, sans authentification |
+| GET     | `/api/status/public`           | Compteurs agrégés `{total, online, offline, unknown}`, sans authentification |
 
 ---
 

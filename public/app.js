@@ -14,6 +14,9 @@ const state = {
   countdown: 30,
   countdownTimer: null,
   editId: null,
+  isViewer: false,
+  selected: new Set(),
+  appVersion: null,
 };
 
 const ENV_ORDER = ['production', 'preprod', 'recette', 'integration', null];
@@ -129,6 +132,7 @@ function filteredSorted() {
 function renderAll() {
   if (state.view === 'list') renderList();
   else renderGrid();
+  updateBulkToolbar();
 }
 
 function renderGrid() {
@@ -188,7 +192,7 @@ function renderList() {
   const visible = filteredSorted();
 
   if (visible.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:40px;color:var(--text-muted)">Aucune instance</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;padding:40px;color:var(--text-muted)">Aucune instance</td></tr>`;
     updateStats();
     return;
   }
@@ -234,6 +238,7 @@ function renderList() {
       : '<span style="color:var(--text-muted);font-size:12px">—</span>';
 
     tr.innerHTML = `
+      <td class="admin-only"><input type="checkbox" class="row-select" ${state.selected.has(inst.id) ? 'checked' : ''} /></td>
       <td><span class="list-status-dot ${statusClass}"></span></td>
       <td>
         <div class="list-name">${inst.name}</div>
@@ -264,8 +269,14 @@ function renderList() {
     `;
 
     tr.querySelector('.open-btn').addEventListener('click', () => window.open(inst.url, '_blank', 'noopener,noreferrer'));
-    tr.querySelector('.edit-btn').addEventListener('click', () => openEditModal(inst));
-    tr.querySelector('.delete-btn').addEventListener('click', () => deleteInstance(inst.id, inst.name));
+    if (state.isViewer) {
+      tr.querySelector('.edit-btn').style.display = 'none';
+      tr.querySelector('.delete-btn').style.display = 'none';
+    } else {
+      tr.querySelector('.edit-btn').addEventListener('click', () => openEditModal(inst));
+      tr.querySelector('.delete-btn').addEventListener('click', () => deleteInstance(inst.id, inst.name));
+      tr.querySelector('.row-select').addEventListener('change', e => toggleSelect(inst.id, e.target.checked));
+    }
     tr.querySelector('.list-update-btn')?.addEventListener('click', () => openUpdateGuide(inst, d));
     tbody.appendChild(tr);
   }
@@ -382,8 +393,22 @@ function buildCard(inst) {
 
   // Actions
   card.querySelector('.open-btn').addEventListener('click', () => window.open(inst.url, '_blank', 'noopener,noreferrer'));
-  card.querySelector('.edit-btn').addEventListener('click', () => openEditModal(inst));
-  card.querySelector('.delete-btn').addEventListener('click', () => deleteInstance(inst.id, inst.name));
+  if (state.isViewer) {
+    card.querySelector('.edit-btn').style.display = 'none';
+    card.querySelector('.delete-btn').style.display = 'none';
+  } else {
+    card.querySelector('.edit-btn').addEventListener('click', () => openEditModal(inst));
+    card.querySelector('.delete-btn').addEventListener('click', () => deleteInstance(inst.id, inst.name));
+  }
+
+  // Bulk selection
+  const selectBox = card.querySelector('.card-select');
+  if (state.isViewer) {
+    selectBox.style.display = 'none';
+  } else {
+    selectBox.checked = state.selected.has(inst.id);
+    selectBox.addEventListener('change', () => toggleSelect(inst.id, selectBox.checked));
+  }
 
   return card;
 }
@@ -724,6 +749,43 @@ $('updateGuideCopyBtn').addEventListener('click', async () => {
   } catch { showToast('Impossible de copier', 'error'); }
 });
 
+/* ── Audit log modal ───────────────────────────────────────────────────────── */
+const AUDIT_LABELS = {
+  'instance:create': 'a créé l\'instance',
+  'instance:update': 'a modifié l\'instance',
+  'instance:delete': 'a supprimé l\'instance',
+  'config:update': 'a modifié la configuration',
+  'backup:import': 'a importé une sauvegarde',
+  'auth:login': 'connexion',
+  'auth:login_failed': 'échec de connexion',
+};
+
+async function openAuditLog() {
+  $('auditOverlay').classList.add('open');
+  const list = $('auditList');
+  list.innerHTML = '<li class="audit-empty">Chargement…</li>';
+  try {
+    const entries = await apiFetch('/api/audit');
+    if (!entries.length) { list.innerHTML = '<li class="audit-empty">Aucune action enregistrée pour le moment.</li>'; return; }
+    list.innerHTML = entries.map(e => `
+      <li class="audit-item">
+        <span class="audit-ts">${new Date(e.ts).toLocaleString('fr-FR')}</span>
+        <span class="audit-user">${e.user}</span>
+        <span class="audit-action">${AUDIT_LABELS[e.action] || e.action}</span>
+        ${e.target ? `<span class="audit-target">${e.target}</span>` : ''}
+      </li>
+    `).join('');
+  } catch (e) {
+    list.innerHTML = `<li class="audit-empty">Erreur : ${e.message}</li>`;
+  }
+}
+
+function closeAuditLog() { $('auditOverlay').classList.remove('open'); }
+
+$('auditBtn').addEventListener('click', openAuditLog);
+$('auditClose').addEventListener('click', closeAuditLog);
+$('auditOverlay').addEventListener('click', e => { if (e.target === $('auditOverlay')) closeAuditLog(); });
+
 /* ── Alert bell ────────────────────────────────────────────────────────────── */
 $('alertBtn').addEventListener('click', e => {
   e.stopPropagation();
@@ -783,9 +845,9 @@ document.querySelectorAll('.view-btn').forEach(btn => {
 applyView(state.view);
 
 /* ── Export CSV ────────────────────────────────────────────────────────────── */
-$('exportBtn').addEventListener('click', () => {
+function exportInstancesToCSV(instances, filenameSuffix = '') {
   const headers = ['Nom', 'Environnement', 'URL', 'Statut', 'Version Portainer', 'Version Docker', 'Environnements', 'Conteneurs actifs', 'Conteneurs arrêtés', 'Stacks', 'Services', 'Uptime %', 'Date ajout'];
-  const rows = state.instances.map(inst => {
+  const rows = instances.map(inst => {
     const d  = state.liveData[inst.id];
     const up = state.uptime[inst.id];
     return [
@@ -809,14 +871,70 @@ $('exportBtn').addEventListener('click', () => {
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
   link.href  = URL.createObjectURL(blob);
-  link.download = `portainer-manager-${new Date().toISOString().slice(0,10)}.csv`;
+  link.download = `portainer-manager${filenameSuffix}-${new Date().toISOString().slice(0,10)}.csv`;
   link.click();
   showToast('Export CSV téléchargé', 'success');
+}
+
+$('exportBtn').addEventListener('click', () => exportInstancesToCSV(state.instances));
+
+/* ── Bulk selection ────────────────────────────────────────────────────────── */
+function toggleSelect(id, checked) {
+  if (checked) state.selected.add(id);
+  else state.selected.delete(id);
+  updateBulkToolbar();
+}
+
+function updateBulkToolbar() {
+  const count = state.selected.size;
+  const toolbar = $('bulkToolbar');
+  if (state.isViewer || count === 0) { toolbar.style.display = 'none'; return; }
+  toolbar.style.display = '';
+  $('bulkCount').textContent = `${count} sélectionnée${count > 1 ? 's' : ''}`;
+}
+
+$('selectAllCheckbox').addEventListener('change', e => {
+  const visible = filteredSorted();
+  if (e.target.checked) visible.forEach(inst => state.selected.add(inst.id));
+  else visible.forEach(inst => state.selected.delete(inst.id));
+  renderAll();
+});
+
+$('bulkClearBtn').addEventListener('click', () => {
+  state.selected.clear();
+  renderAll();
+});
+
+$('bulkExportBtn').addEventListener('click', () => {
+  const selectedInstances = state.instances.filter(i => state.selected.has(i.id));
+  exportInstancesToCSV(selectedInstances, '-selection');
+});
+
+$('bulkApplyEnvBtn').addEventListener('click', async () => {
+  const value = $('bulkEnvSelect').value;
+  if (!value) { showToast('Choisissez un environnement', 'error'); return; }
+  const environment = value === '__clear__' ? '' : value;
+  const ids = Array.from(state.selected);
+  const btn = $('bulkApplyEnvBtn');
+  btn.disabled = true; btn.textContent = 'Application…';
+  try {
+    const results = await Promise.allSettled(ids.map(id => {
+      const inst = state.instances.find(i => i.id === id);
+      return apiFetch(`/api/instances/${id}`, { method: 'PUT', body: JSON.stringify({ name: inst.name, url: inst.url, environment, notes: inst.notes || '' }) });
+    }));
+    const failed = results.filter(r => r.status === 'rejected').length;
+    showToast(failed ? `${ids.length - failed} mise(s) à jour, ${failed} échec(s)` : `${ids.length} instance(s) mise(s) à jour`, failed ? 'error' : 'success');
+    state.selected.clear();
+    $('bulkEnvSelect').value = '';
+    await loadInstances();
+  } finally {
+    btn.disabled = false; btn.textContent = 'Appliquer';
+  }
 });
 
 /* ── Escape key ────────────────────────────────────────────────────────────── */
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeModal(); closeSettings(); closeUpdateGuide(); }
+  if (e.key === 'Escape') { closeModal(); closeSettings(); closeUpdateGuide(); closeAuditLog(); }
 });
 
 /* ── Auto-refresh ──────────────────────────────────────────────────────────── */
@@ -867,13 +985,41 @@ async function loadCurrentUser() {
     const user = await apiFetch('/api/auth/me');
     if (user?.username) {
       const el = $('currentUser');
-      el.innerHTML = `Connecté en tant que <strong>${user.username}</strong>${user.method === 'oidc' ? ' (SSO)' : ''}`;
+      const roleTag = user.role === 'viewer' ? ' — lecture seule' : '';
+      el.innerHTML = `Connecté en tant que <strong>${user.username}</strong>${user.method === 'oidc' ? ' (SSO)' : ''}${roleTag}`;
       el.style.display = '';
+    }
+    state.isViewer = user?.role === 'viewer';
+    if (state.isViewer) {
+      document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
     }
   } catch {}
 }
 
+/* ── App version ───────────────────────────────────────────────────────────── */
+async function loadAppVersion() {
+  try {
+    state.appVersion = await apiFetch('/api/app/version');
+    const badge = $('appVersionBadge');
+    const outdated = isOutdated(state.appVersion.current, state.appVersion.latest);
+    badge.textContent = 'v' + state.appVersion.current;
+    badge.classList.toggle('outdated', !!outdated);
+    if (outdated) badge.title = `v${state.appVersion.latest} disponible sur GitHub`;
+    renderAboutStatus();
+  } catch {}
+}
+
+function renderAboutStatus() {
+  const el = $('aboutStatus');
+  if (!el || !state.appVersion) return;
+  const { current, latest } = state.appVersion;
+  const outdated = isOutdated(current, latest);
+  el.innerHTML = outdated
+    ? `<span class="status-dot off"></span> Version <strong>v${current}</strong> — <strong style="color:var(--warning)">v${latest} disponible</strong>`
+    : `<span class="status-dot on"></span> Version <strong>v${current}</strong> — à jour`;
+}
+
 /* ── Init ──────────────────────────────────────────────────────────────────── */
-Promise.all([fetchLatestVersion(), fetchUptime(), loadCurrentUser()])
+Promise.all([fetchLatestVersion(), fetchUptime(), loadCurrentUser(), loadAppVersion()])
   .then(() => loadInstances())
   .then(() => scheduleRefresh());

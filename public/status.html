@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Portainer Manager — Statut</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="login-body">
+  <div class="login-card status-card">
+    <div class="login-logo">
+      <svg width="38" height="38" viewBox="0 0 32 32" fill="none">
+        <rect width="32" height="32" rx="8" fill="#13BEF9"/>
+        <path d="M8 10h16M8 16h10M8 22h13" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      <div>
+        <div class="login-title">Portainer Manager</div>
+        <div class="login-subtitle">Statut public</div>
+      </div>
+    </div>
+
+    <div class="status-grid">
+      <div class="status-tile">
+        <span class="status-tile-value" id="statTotal">—</span>
+        <span class="status-tile-label">Instances</span>
+      </div>
+      <div class="status-tile online">
+        <span class="status-tile-value" id="statOnline">—</span>
+        <span class="status-tile-label">En ligne</span>
+      </div>
+      <div class="status-tile offline">
+        <span class="status-tile-value" id="statOffline">—</span>
+        <span class="status-tile-label">Hors ligne</span>
+      </div>
+    </div>
+
+    <p class="status-updated" id="statUpdated">Chargement…</p>
+  </div>
+
+  <script>
+    async function refresh() {
+      try {
+        const res = await fetch('/api/status/public');
+        const d = await res.json();
+        document.getElementById('statTotal').textContent = d.total;
+        document.getElementById('statOnline').textContent = d.online;
+        document.getElementById('statOffline').textContent = d.offline;
+        const date = new Date(d.updatedAt);
+        document.getElementById('statUpdated').textContent = 'Mis à jour à ' + date.toLocaleTimeString('fr-FR');
+      } catch {
+        document.getElementById('statUpdated').textContent = 'Impossible de récupérer le statut';
+      }
+    }
+    refresh();
+    setInterval(refresh, 30000);
+  </script>
+</body>
+</html>

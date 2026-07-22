@@ -47,6 +47,15 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .login-divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; color: var(--text-muted); font-size: 12px; }
 .login-divider::before, .login-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
+.status-card { max-width: 440px; }
+.status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 8px; }
+.status-tile { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 18px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.status-tile-value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.status-tile-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.status-tile.online .status-tile-value { color: var(--online); }
+.status-tile.offline .status-tile-value { color: var(--offline); }
+.status-updated { text-align: center; font-size: 12px; color: var(--text-muted); margin-top: 16px; }
+
 /* ── Header ────────────────────────────────────────────────────────────────── */
 .header {
   position: sticky; top: 0; z-index: 50;
@@ -59,6 +68,9 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   height: 60px; display: flex; align-items: center; justify-content: space-between; gap: 16px;
 }
 .logo { display: flex; align-items: center; gap: 12px; font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
+.app-version { font-size: 11px; font-weight: 600; color: var(--text-muted); background: var(--bg); border: 1px solid var(--border); border-radius: 99px; padding: 2px 8px; text-decoration: none; transition: all 0.15s ease; }
+.app-version:hover { color: var(--primary); border-color: var(--primary); }
+.app-version.outdated { color: var(--warning); border-color: rgba(245,158,11,0.35); background: rgba(245,158,11,0.1); }
 .header-actions { display: flex; align-items: center; gap: 10px; }
 
 /* ── Refresh indicator ─────────────────────────────────────────────────────── */
@@ -146,6 +158,15 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   max-width: 1600px; margin: 20px auto 0; padding: 0 24px;
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
 }
+
+.bulk-toolbar {
+  max-width: 1600px; margin: 12px auto 0; padding: 10px 24px;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: rgba(19,190,249,0.08); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  font-size: 13px; color: var(--text);
+}
+.bulk-toolbar select { padding: 6px 10px; font-size: 12px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-sm); color: var(--text); }
+.card-select { margin-right: 2px; accent-color: var(--primary); }
 .search-wrap { position: relative; flex: 1; min-width: 200px; max-width: 360px; }
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
 .search-input { width: 100%; padding: 9px 12px 9px 40px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 13px; outline: none; transition: border-color 0.15s; }
@@ -348,6 +369,15 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .settings-status .status-dot.on  { background: var(--online); }
 .settings-status .status-dot.off { background: var(--text-muted); }
 .settings-backup-actions { display: flex; gap: 8px; }
+
+.audit-list { list-style: none; display: flex; flex-direction: column; gap: 2px; max-height: 60vh; overflow-y: auto; }
+.audit-item { display: flex; align-items: baseline; gap: 8px; padding: 9px 4px; border-bottom: 1px solid var(--border); font-size: 12px; flex-wrap: wrap; }
+.audit-item:last-child { border-bottom: none; }
+.audit-ts { color: var(--text-muted); font-variant-numeric: tabular-nums; min-width: 130px; }
+.audit-user { font-weight: 600; color: var(--primary); }
+.audit-action { color: var(--text); }
+.audit-target { color: var(--text-muted); font-style: italic; }
+.audit-empty { text-align: center; color: var(--text-muted); padding: 30px 0; font-size: 13px; }
 
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .form-group { display: flex; flex-direction: column; gap: 6px; }

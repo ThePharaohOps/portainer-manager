@@ -11,9 +11,12 @@ const FileStore = require('session-file-store')(session);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const APP_VERSION = require('./package.json').version;
+const GITHUB_REPO = 'ThePharaohOps/portainer-manager';
 const DATA_FILE    = path.join(__dirname, 'data', 'instances.json');
 const CONFIG_FILE  = path.join(__dirname, 'data', 'config.json');
 const UPTIME_FILE  = path.join(__dirname, 'data', 'uptime.json');
+const AUDIT_FILE   = path.join(__dirname, 'data', 'audit.log');
 const SESSION_DIR  = path.join(__dirname, 'data', 'sessions');
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
 
@@ -26,14 +29,23 @@ const OIDC_SCOPE         = process.env.OIDC_SCOPE || 'openid profile email';
 const OIDC_DISPLAY_NAME  = process.env.OIDC_DISPLAY_NAME || 'SSO';
 const OIDC_ALLOW_INSECURE = process.env.OIDC_ALLOW_INSECURE === 'true';
 const OIDC_ENABLED = !!(OIDC_ISSUER_URL && OIDC_CLIENT_ID && OIDC_CLIENT_SECRET && OIDC_REDIRECT_URI);
+const OIDC_ROLE_CLAIM  = process.env.OIDC_ROLE_CLAIM || 'groups';
+const OIDC_ADMIN_GROUP = process.env.OIDC_ADMIN_GROUP || null;
 let oidcModule = null;
 let oidcConfig = null;
+
+function determineOidcRole(claims) {
+  if (!OIDC_ADMIN_GROUP) return 'admin'; // no restriction configured: every SSO user is admin
+  const raw = claims?.[OIDC_ROLE_CLAIM];
+  const values = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+  return values.includes(OIDC_ADMIN_GROUP) ? 'admin' : 'viewer';
+}
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 app.use(express.json());
 app.use(session({
-  store: new FileStore({ path: SESSION_DIR, retries: 0, logFn: () => {} }),
+  store: new FileStore({ path: SESSION_DIR, retries: 5, retryInterval: 100, logFn: () => {} }),
   secret: process.env.SESSION_SECRET || 'pm-secret-' + Math.random().toString(36),
   resave: false,
   saveUninitialized: false,
@@ -46,10 +58,16 @@ app.use((req, res, next) => {
   if (req.path === '/login' || req.path === '/api/auth/login') return next();
   if (req.path === '/api/auth/methods') return next();
   if (req.path === '/auth/oidc/login' || req.path === '/auth/oidc/callback') return next();
+  if (req.path === '/status' || req.path === '/api/status/public') return next();
   if (req.session?.authenticated) return next();
   if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Non authentifié' });
   res.redirect('/login');
 });
+
+function requireAdmin(req, res, next) {
+  if (req.session?.user?.role === 'viewer') return res.status(403).json({ error: 'Action réservée aux administrateurs' });
+  next();
+}
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -144,6 +162,29 @@ setInterval(() => {
   fs.writeFileSync(UPTIME_FILE, JSON.stringify(uptimeStore), 'utf8');
   uptimeDirty = false;
 }, 5 * 60 * 1000);
+
+// ── Audit log (append-only JSONL) ─────────────────────────────────────────────
+const MAX_AUDIT_ENTRIES_RETURNED = 200;
+
+function logAudit(user, action, target) {
+  const entry = { ts: new Date().toISOString(), user: user || 'inconnu', action, target: target || null };
+  try {
+    fs.mkdirSync(path.dirname(AUDIT_FILE), { recursive: true });
+    fs.appendFileSync(AUDIT_FILE, JSON.stringify(entry) + '\n', 'utf8');
+  } catch (e) {
+    console.error('[audit] Échec d\'écriture:', e.message);
+  }
+}
+
+function loadAudit(limit = MAX_AUDIT_ENTRIES_RETURNED) {
+  try {
+    if (!fs.existsSync(AUDIT_FILE)) return [];
+    const lines = fs.readFileSync(AUDIT_FILE, 'utf8').trim().split('\n').filter(Boolean);
+    return lines.slice(-limit).reverse().map(l => {
+      try { return JSON.parse(l); } catch { return null; }
+    }).filter(Boolean);
+  } catch { return []; }
+}
 
 // ── Webhook on status change ──────────────────────────────────────────────────
 const statusCache = {};
@@ -240,6 +281,32 @@ app.get('/api/portainer/latest-version', async (req, res) => {
   }
 });
 
+// ── App version (self) — cached 1h, latest Git tag on GitHub ─────────────────
+let appLatestVersionCache = { version: null, fetchedAt: 0 };
+
+app.get('/api/app/version', async (req, res) => {
+  const ONE_HOUR = 3_600_000;
+  if (appLatestVersionCache.version && Date.now() - appLatestVersionCache.fetchedAt < ONE_HOUR) {
+    return res.json({ current: APP_VERSION, latest: appLatestVersionCache.version });
+  }
+  try {
+    const r = await axios.get(
+      `https://api.github.com/repos/${GITHUB_REPO}/tags`,
+      { headers: { 'User-Agent': 'portainer-manager' }, timeout: 8000 }
+    );
+    const versions = (r.data || []).map(t => t.name?.replace(/^v/, '')).filter(Boolean);
+    versions.sort((a, b) => {
+      const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+      for (let i = 0; i < 3; i++) { const d = (pb[i] ?? 0) - (pa[i] ?? 0); if (d) return d; }
+      return 0;
+    });
+    appLatestVersionCache = { version: versions[0] ?? null, fetchedAt: Date.now() };
+    res.json({ current: APP_VERSION, latest: appLatestVersionCache.version });
+  } catch {
+    res.json({ current: APP_VERSION, latest: appLatestVersionCache.version });
+  }
+});
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 app.get('/login', (req, res) => {
   if (req.session?.authenticated) return res.redirect('/');
@@ -249,9 +316,11 @@ app.get('/login', (req, res) => {
 app.post('/api/auth/login', (req, res) => {
   if (req.body.password === ADMIN_PASSWORD) {
     req.session.authenticated = true;
-    req.session.user = { username: 'admin', method: 'local' };
+    req.session.user = { username: 'admin', method: 'local', role: 'admin' };
+    logAudit('admin', 'auth:login', 'local');
     return res.json({ success: true });
   }
+  logAudit('anonyme', 'auth:login_failed', 'local');
   res.status(401).json({ error: 'Mot de passe incorrect' });
 });
 
@@ -300,10 +369,9 @@ app.get('/auth/oidc/callback', async (req, res) => {
     const claims = tokens.claims();
     delete req.session.oidc;
     req.session.authenticated = true;
-    req.session.user = {
-      username: claims?.email || claims?.preferred_username || claims?.name || claims?.sub || 'utilisateur SSO',
-      method: 'oidc',
-    };
+    const username = claims?.email || claims?.preferred_username || claims?.name || claims?.sub || 'utilisateur SSO';
+    req.session.user = { username, method: 'oidc', role: determineOidcRole(claims) };
+    logAudit(username, 'auth:login', 'oidc');
     res.redirect('/');
   } catch (e) {
     console.error('[oidc] Échec de connexion:', e.message);
@@ -312,9 +380,9 @@ app.get('/auth/oidc/callback', async (req, res) => {
 });
 
 // ── Config (webhook) ──────────────────────────────────────────────────────────
-app.get('/api/config', (req, res) => res.json(loadConfig()));
+app.get('/api/config', requireAdmin, (req, res) => res.json(loadConfig()));
 
-app.put('/api/config', (req, res) => {
+app.put('/api/config', requireAdmin, (req, res) => {
   const retention = parseInt(req.body.uptimeRetention, 10);
   const config = {
     webhookUrl:  req.body.webhookUrl  || null,
@@ -325,10 +393,11 @@ app.put('/api/config', (req, res) => {
     uptimeRetention: Number.isFinite(retention) ? Math.min(Math.max(retention, 10), 5000) : DEFAULT_CONFIG.uptimeRetention,
   };
   saveConfig(config);
+  logAudit(req.session.user?.username, 'config:update', config.webhookUrl ? `webhook ${config.webhookType}` : 'webhook désactivé');
   res.json(config);
 });
 
-app.post('/api/config/test-webhook', async (req, res) => {
+app.post('/api/config/test-webhook', requireAdmin, async (req, res) => {
   const { webhookUrl, webhookType } = req.body;
   if (!webhookUrl) return res.status(400).json({ error: 'URL manquante' });
 
@@ -350,7 +419,7 @@ app.post('/api/config/test-webhook', async (req, res) => {
 });
 
 // ── Backup (export/import) ────────────────────────────────────────────────────
-app.get('/api/backup/export', (req, res) => {
+app.get('/api/backup/export', requireAdmin, (req, res) => {
   const backup = {
     version: 1,
     exportedAt: new Date().toISOString(),
@@ -373,13 +442,15 @@ function normalizeImportedInstance(raw, existing) {
     name: (raw.name ? String(raw.name).trim() : '') || existing?.name || url,
     url,
     environment: VALID_ENVS.includes(raw.environment) ? raw.environment : (existing?.environment ?? null),
-    notes: raw.notes !== undefined ? (String(raw.notes).trim() || null) : (existing?.notes ?? null),
+    notes: raw.notes === undefined
+      ? (existing?.notes ?? null)
+      : (raw.notes ? String(raw.notes).trim() || null : null),
     token,
     createdAt: existing?.createdAt || raw.createdAt || new Date().toISOString(),
   };
 }
 
-app.post('/api/backup/import', (req, res) => {
+app.post('/api/backup/import', requireAdmin, (req, res) => {
   const { instances: incoming, config } = req.body;
   if (!Array.isArray(incoming)) return res.status(400).json({ error: 'Format invalide : "instances" doit être un tableau' });
 
@@ -400,7 +471,13 @@ app.post('/api/backup/import', (req, res) => {
     saveConfig({ ...loadConfig(), ...config, webhookEnvironments: Array.isArray(config.webhookEnvironments) ? config.webhookEnvironments.filter(e => VALID_ENVS.includes(e)) : [] });
   }
 
+  logAudit(req.session.user?.username, 'backup:import', `${added} ajoutée(s), ${updated} mise(s) à jour, ${skipped} ignorée(s)`);
   res.json({ success: true, added, updated, skipped });
+});
+
+// ── Audit log ──────────────────────────────────────────────────────────────────
+app.get('/api/audit', requireAdmin, (req, res) => {
+  res.json(loadAudit());
 });
 
 // ── Uptime ────────────────────────────────────────────────────────────────────
@@ -417,6 +494,19 @@ app.get('/api/uptime', (req, res) => {
   res.json(result);
 });
 
+// ── Public status page (no auth, aggregate counts only) ──────────────────────
+app.get('/status', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'status.html'));
+});
+
+app.get('/api/status/public', (req, res) => {
+  const total = loadInstances().length;
+  const known = Object.values(statusCache);
+  const online = known.filter(v => v === true).length;
+  const offline = known.filter(v => v === false).length;
+  res.json({ total, online, offline, unknown: total - known.length, updatedAt: new Date().toISOString() });
+});
+
 // ── Instances REST API ────────────────────────────────────────────────────────
 const VALID_ENVS = ['integration', 'recette', 'preprod', 'production'];
 
@@ -424,7 +514,7 @@ app.get('/api/instances', (req, res) => {
   res.json(loadInstances().map(stripToken));
 });
 
-app.post('/api/instances', (req, res) => {
+app.post('/api/instances', requireAdmin, (req, res) => {
   const { name, url, token, environment, notes } = req.body;
   if (!url || !token) return res.status(400).json({ error: 'url et token requis' });
 
@@ -445,10 +535,11 @@ app.post('/api/instances', (req, res) => {
 
   instances.push(instance);
   saveInstances(instances);
+  logAudit(req.session.user?.username, 'instance:create', instance.name);
   res.status(201).json(stripToken(instance));
 });
 
-app.put('/api/instances/:id', (req, res) => {
+app.put('/api/instances/:id', requireAdmin, (req, res) => {
   const { name, url, token, environment, notes } = req.body;
   const instances = loadInstances();
   const idx = instances.findIndex(i => i.id === req.params.id);
@@ -468,19 +559,22 @@ app.put('/api/instances/:id', (req, res) => {
   };
 
   saveInstances(instances);
+  logAudit(req.session.user?.username, 'instance:update', instances[idx].name);
   res.json(stripToken(instances[idx]));
 });
 
-app.delete('/api/instances/:id', (req, res) => {
+app.delete('/api/instances/:id', requireAdmin, (req, res) => {
   const instances = loadInstances();
   const idx = instances.findIndex(i => i.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Instance introuvable' });
 
+  const deletedName = instances[idx].name;
   instances.splice(idx, 1);
   saveInstances(instances);
   delete uptimeStore[req.params.id];
   delete statusCache[req.params.id];
   uptimeDirty = true;
+  logAudit(req.session.user?.username, 'instance:delete', deletedName);
   res.json({ success: true });
 });
 

@@ -17,6 +17,7 @@
         <path d="M8 10h16M8 16h10M8 22h13" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
       </svg>
       <span>Portainer Manager</span>
+      <a class="app-version" id="appVersionBadge" href="https://github.com/ThePharaohOps/portainer-manager/tags" target="_blank" rel="noopener noreferrer" title="Voir les versions sur GitHub">—</a>
     </div>
     <div class="header-actions">
       <span class="refresh-indicator" title="Auto-refresh actif">
@@ -43,8 +44,13 @@
         </div>
       </div>
 
+      <!-- Audit log -->
+      <button class="icon-btn admin-only" id="auditBtn" title="Journal d'audit">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/></svg>
+      </button>
+
       <!-- Settings -->
-      <button class="icon-btn" id="settingsBtn" title="Paramètres webhook">
+      <button class="icon-btn admin-only" id="settingsBtn" title="Paramètres webhook">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
 
@@ -57,7 +63,7 @@
         Déconnexion
       </button>
 
-      <button class="btn btn-primary" id="addBtn">
+      <button class="btn btn-primary admin-only" id="addBtn">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Ajouter
       </button>
@@ -127,6 +133,22 @@
   </div>
 </div>
 
+<!-- ── Bulk actions toolbar ─────────────────────────────────────────────────── -->
+<div class="bulk-toolbar admin-only" id="bulkToolbar" style="display:none">
+  <span id="bulkCount">0 sélectionnée(s)</span>
+  <select id="bulkEnvSelect">
+    <option value="" disabled selected>Changer l'environnement…</option>
+    <option value="integration">Intégration</option>
+    <option value="recette">Recette</option>
+    <option value="preprod">Pré-production</option>
+    <option value="production">Production</option>
+    <option value="__clear__">— Retirer l'environnement —</option>
+  </select>
+  <button type="button" class="btn btn-ghost btn-sm" id="bulkApplyEnvBtn">Appliquer</button>
+  <button type="button" class="btn btn-ghost btn-sm" id="bulkExportBtn">Exporter la sélection (CSV)</button>
+  <button type="button" class="btn btn-ghost btn-sm" id="bulkClearBtn">Désélectionner tout</button>
+</div>
+
 <!-- ── Main content ─────────────────────────────────────────────────────────── -->
 <main class="main">
   <!-- Grid view -->
@@ -146,6 +168,7 @@
       <table class="list-table">
         <thead>
           <tr>
+            <th class="admin-only"><input type="checkbox" id="selectAllCheckbox" /></th>
             <th>Statut</th>
             <th>Nom</th>
             <th>Env.</th>
@@ -289,11 +312,36 @@
         </div>
       </div>
 
+      <div class="settings-section">
+        <h3 class="settings-title">À propos</h3>
+        <div class="settings-status" id="aboutStatus">Chargement…</div>
+        <div class="settings-backup-actions">
+          <a class="btn btn-ghost btn-sm" href="https://github.com/ThePharaohOps/portainer-manager" target="_blank" rel="noopener noreferrer">Voir sur GitHub</a>
+          <a class="btn btn-ghost btn-sm" href="https://github.com/ThePharaohOps/portainer-manager/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Changelog</a>
+        </div>
+      </div>
+
       <div class="form-error" id="settingsError"></div>
       <div class="modal-footer">
         <button type="button" class="btn btn-ghost" id="settingsCancelBtn">Annuler</button>
         <button type="button" class="btn btn-primary" id="saveSettingsBtn">Enregistrer</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Audit log modal ──────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="auditOverlay">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h2>Journal d'audit</h2>
+      <button class="modal-close" id="auditClose">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p class="settings-desc">Les 200 dernières actions (créations, modifications, suppressions, connexions).</p>
+      <ul class="audit-list" id="auditList"></ul>
     </div>
   </div>
 </div>
@@ -329,6 +377,7 @@
   <div class="card">
     <div class="card-header">
       <div class="card-title-row">
+        <input type="checkbox" class="card-select" />
         <span class="status-badge"></span>
         <h3 class="card-name"></h3>
       </div>
