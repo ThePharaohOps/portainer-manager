@@ -375,6 +375,12 @@ Le bouton **⚙️ Paramètres → Sauvegarde** exporte un fichier JSON contenan
 
 > ⚠️ Les tokens restent **chiffrés** dans le fichier exporté (AES-256-GCM), mais ce fichier doit être traité comme un secret : il ne redevient lisible qu'avec le `SESSION_SECRET` de l'instance qui l'a généré, mais autant le stocker comme n'importe quel export de credentials.
 
+### Restaurer sur une autre machine
+
+Pour migrer vers une nouvelle installation (nouveau serveur, deuxième PC...), **copiez le `SESSION_SECRET` de l'installation d'origine dans le `.env` de la nouvelle** avant d'importer la sauvegarde. Sans ça, les instances apparaîtront bien dans le tableau (les métadonnées ne sont pas chiffrées), mais chaque token restera indéchiffrable — carte "Hors ligne" avec l'erreur `Token illisible (SESSION_SECRET incorrect)`, et une ligne `[crypto] Token illisible pour "…"` dans les logs.
+
+Si ça arrive après coup : pas besoin de tout réimporter, il suffit de corriger `SESSION_SECRET` dans le `.env` de la nouvelle machine puis de redémarrer le conteneur (`docker compose up -d`) — les tokens déjà importés redeviennent lisibles immédiatement, la clé de chiffrement étant la seule chose qui manquait.
+
 ---
 
 ## Licence

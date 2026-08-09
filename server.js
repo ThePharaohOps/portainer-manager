@@ -583,7 +583,21 @@ app.get('/api/instances/:id/data', async (req, res) => {
   const instance = instances.find(i => i.id === req.params.id);
   if (!instance) return res.status(404).json({ error: 'Instance introuvable' });
 
-  const token = decryptToken(instance.token);
+  let token;
+  try {
+    token = decryptToken(instance.token);
+  } catch {
+    console.error(`[crypto] Token illisible pour "${instance.name}" — SESSION_SECRET différent de celui utilisé au chiffrement (ex. restauration d'une sauvegarde sur une autre machine sans copier le même SESSION_SECRET).`);
+    recordUptime(instance.id, false);
+    checkStatusChange(instance.id, instance.name, false, instance.url, instance.environment);
+    return res.json({
+      online: false,
+      error: 'Token illisible (SESSION_SECRET incorrect)',
+      version: null, dockerVersion: null, endpointsCount: 0, stacksCount: 0,
+      runningContainers: 0, stoppedContainers: 0, totalContainers: 0, servicesCount: 0,
+    });
+  }
+
   const [statusResult, endpointsResult, stacksResult] = await Promise.allSettled([
     portainerGet(instance.url, token, '/api/status'),
     portainerGet(instance.url, token, '/api/endpoints?limit=100'),

@@ -4,6 +4,15 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 
 Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/), le projet respecte le [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [1.1.1] - 2026-08-09
+
+### Corrigé
+- Mise à jour de dépendances : `axios` 1.18.1 → 1.19.0, et correction d'une vulnérabilité haute (`brace-expansion`, dépendance de dev via `nodemon`).
+- Restauration d'une sauvegarde sur une autre machine avec un `SESSION_SECRET` différent : au lieu d'une stack trace crypto brute dans les logs et d'un 500 générique, l'instance concernée passe proprement "Hors ligne" avec le message `Token illisible (SESSION_SECRET incorrect)`.
+
+### Documentation
+- Le README explique désormais explicitement qu'il faut copier le même `SESSION_SECRET` pour restaurer une sauvegarde sur une nouvelle machine, et comment récupérer une installation déjà touchée par ce problème sans réimporter.
+
 ## [1.1.0] - 2026-07-22
 
 ### Ajouté
