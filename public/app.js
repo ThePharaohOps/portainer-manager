@@ -809,8 +809,21 @@ function renderSearchResults(data) {
   $('searchResults').innerHTML = data.results.map(r => {
     const inst = state.instances.find(i => i.id === r.instanceId);
     const envHtml = r.environment ? `<span class="env-badge ${ENV_CLASSES[r.environment]}">${ENV_LABELS[r.environment]}</span>` : '';
-    const stackItems = r.stacks.map(s => `<li>📚 <strong>${escapeHtml(s.name)}</strong> <span class="search-tag">stack</span></li>`);
-    const containerItems = r.containers.map(c => `<li>📦 <strong>${escapeHtml(c.name)}</strong> <span class="search-tag">${escapeHtml(c.state)}</span> <span class="search-image">${escapeHtml(c.image)}</span></li>`);
+    const stackItems = r.stacks.map(s => `
+      <li>
+        <div class="search-item-name" title="${escapeHtml(s.name)}">📚 ${escapeHtml(s.name)}</div>
+        <div class="search-item-meta"><span class="search-tag">stack</span></div>
+      </li>
+    `);
+    const containerItems = r.containers.map(c => `
+      <li>
+        <div class="search-item-name" title="${escapeHtml(c.name)}">📦 ${escapeHtml(c.name)}</div>
+        <div class="search-item-meta">
+          <span class="search-tag">${escapeHtml(c.state)}</span>
+          <span class="search-image" title="${escapeHtml(c.image)}">${escapeHtml(c.image)}</span>
+        </div>
+      </li>
+    `);
     return `
       <div class="search-group">
         <div class="search-group-header">
