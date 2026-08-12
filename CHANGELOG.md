@@ -4,6 +4,12 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 
 Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/), le projet respecte le [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [1.1.2] - 2026-08-12
+
+### Corrigé
+- SSO : `openid-client` redérive le `redirect_uri` envoyé au fournisseur lors de l'échange du code à partir de l'hôte/protocole vus par Express, au lieu de réutiliser `OIDC_REDIRECT_URI`. Derrière un reverse proxy (ou toute config où l'app ne voit pas exactement l'URL externe), ça produisait `invalid_grant` / "Incorrect redirect_uri" côté fournisseur (Keycloak, etc.) alors que la configuration était pourtant correcte. La valeur d'`OIDC_REDIRECT_URI` est maintenant forcée explicitement.
+- Les erreurs OIDC affichent désormais le code d'erreur OAuth et sa description (`error`, `error_description`, `status`) dans les logs, au lieu du seul message générique `server responded with an error in the response body`.
+
 ## [1.1.1] - 2026-08-09
 
 ### Corrigé

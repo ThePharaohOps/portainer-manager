@@ -184,6 +184,8 @@ OIDC_DISPLAY_NAME=Entra ID
 
 Dans les deux cas, il faut déclarer `OIDC_REDIRECT_URI` comme URI de redirection autorisée côté fournisseur (type "Web"/"Authorization Code").
 
+> Derrière un reverse proxy, la valeur exacte d'`OIDC_REDIRECT_URI` est toujours utilisée pour l'échange du code (indépendamment de ce que le proxy transmet comme en-tête `Host`) — pas besoin de configurer `trust proxy` pour que le SSO fonctionne. Si vous obtenez `invalid_grant` / "Incorrect redirect_uri" (Keycloak) ou équivalent malgré tout, vérifiez d'abord que la valeur d'`OIDC_REDIRECT_URI` correspond **caractère pour caractère** à l'URI enregistrée côté fournisseur.
+
 > **Pourquoi pas LDAP ?** La seule bibliothèque LDAP viable pour Node.js (`ldapjs`, et tout ce qui en dépend comme `passport-ldapauth`) a été [officiellement décommissionnée](https://github.com/ldapjs/node-ldapjs) par son mainteneur, sans successeur maintenu. OIDC est privilégié car activement maintenu et couvre la quasi-totalité des annuaires d'entreprise modernes (y compris Active Directory via ADFS ou Entra ID).
 
 ---

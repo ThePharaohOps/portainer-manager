@@ -659,6 +659,17 @@ async function start() {
         undefined,
         discoveryOptions
       );
+      // authorizationCodeGrant() re-derives redirect_uri for the token request from the
+      // incoming request's protocol/host (stripping the query string) instead of reusing
+      // OIDC_REDIRECT_URI. Behind a reverse proxy — or whenever Express doesn't see exactly
+      // the externally-registered URL — that derived value mismatches what's registered at
+      // the IdP, causing "invalid_grant: Incorrect redirect_uri". Force the configured value.
+      oidcConfig[oidcModule.customFetch] = (url, options) => {
+        if (options?.body instanceof URLSearchParams && options.body.get('grant_type') === 'authorization_code') {
+          options.body.set('redirect_uri', OIDC_REDIRECT_URI);
+        }
+        return fetch(url, options);
+      };
       oidcStatus = `activé (${OIDC_ISSUER_URL})`;
     } catch (e) {
       oidcStatus = `échec de la découverte — ${e.message}`;
