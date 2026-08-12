@@ -4,6 +4,12 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 
 Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/), le projet respecte le [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [1.2.1] - 2026-08-12
+
+### Corrigé
+- Recherche globale : les noms de conteneurs Swarm et les tags d'image longs (sans espace pour couper) faisaient déborder les résultats horizontalement et verticalement. Chaque résultat s'affiche maintenant sur sa propre ligne, tronqué avec `…` si nécessaire (texte complet au survol).
+- Mise à jour de `openid-client` (6.8.4 → 6.8.5).
+
 ## [1.2.0] - 2026-08-12
 
 ### Ajouté
