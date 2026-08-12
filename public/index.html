@@ -44,6 +44,11 @@
         </div>
       </div>
 
+      <!-- Global search -->
+      <button class="icon-btn" id="searchOpenBtn" title="Recherche globale (conteneurs, stacks)">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
+
       <!-- Audit log -->
       <button class="icon-btn admin-only" id="auditBtn" title="Journal d'audit">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/></svg>
@@ -326,6 +331,27 @@
         <button type="button" class="btn btn-ghost" id="settingsCancelBtn">Annuler</button>
         <button type="button" class="btn btn-primary" id="saveSettingsBtn">Enregistrer</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Global search modal ──────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="searchOverlay">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h2>Recherche globale</h2>
+      <button class="modal-close" id="searchClose">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p class="settings-desc">Cherche un conteneur ou une stack par son nom, à travers toutes les instances configurées.</p>
+      <form id="searchForm" style="display:flex;gap:8px;">
+        <input type="text" id="globalSearchInput" placeholder="Nom de conteneur ou de stack…" autocomplete="off" style="flex:1" />
+        <button type="submit" class="btn btn-primary" id="globalSearchBtn">Rechercher</button>
+      </form>
+      <p class="settings-hint" id="searchMeta"></p>
+      <div class="search-results" id="searchResults"></div>
     </div>
   </div>
 </div>

@@ -26,6 +26,12 @@ const ENV_CLASSES = { integration: 'env-integration', recette: 'env-recette', pr
 /* ── DOM ───────────────────────────────────────────────────────────────────── */
 const $ = id => document.getElementById(id);
 
+// Container/image names come from each instance's Docker API — external data, not just
+// what an admin typed — so escape before interpolating into innerHTML.
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 /* ── API ───────────────────────────────────────────────────────────────────── */
 async function apiFetch(url, options = {}) {
   const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options });
@@ -786,6 +792,59 @@ $('auditBtn').addEventListener('click', openAuditLog);
 $('auditClose').addEventListener('click', closeAuditLog);
 $('auditOverlay').addEventListener('click', e => { if (e.target === $('auditOverlay')) closeAuditLog(); });
 
+/* ── Recherche globale ─────────────────────────────────────────────────────── */
+function openSearch() {
+  $('searchOverlay').classList.add('open');
+  $('globalSearchInput').focus();
+}
+
+function closeSearch() { $('searchOverlay').classList.remove('open'); }
+
+function renderSearchResults(data) {
+  $('searchMeta').textContent = `${data.results.length} instance(s) avec des résultats, sur ${data.instancesSearched} interrogée(s).`;
+  if (!data.results.length) {
+    $('searchResults').innerHTML = '<p class="audit-empty">Aucun résultat.</p>';
+    return;
+  }
+  $('searchResults').innerHTML = data.results.map(r => {
+    const inst = state.instances.find(i => i.id === r.instanceId);
+    const envHtml = r.environment ? `<span class="env-badge ${ENV_CLASSES[r.environment]}">${ENV_LABELS[r.environment]}</span>` : '';
+    const stackItems = r.stacks.map(s => `<li>📚 <strong>${escapeHtml(s.name)}</strong> <span class="search-tag">stack</span></li>`);
+    const containerItems = r.containers.map(c => `<li>📦 <strong>${escapeHtml(c.name)}</strong> <span class="search-tag">${escapeHtml(c.state)}</span> <span class="search-image">${escapeHtml(c.image)}</span></li>`);
+    return `
+      <div class="search-group">
+        <div class="search-group-header">
+          <strong>${escapeHtml(r.instanceName)}</strong> ${envHtml}
+          ${inst ? `<a href="${escapeHtml(inst.url)}" target="_blank" rel="noopener noreferrer" class="search-open">Ouvrir →</a>` : ''}
+        </div>
+        <ul class="search-items">${[...stackItems, ...containerItems].join('')}</ul>
+      </div>
+    `;
+  }).join('');
+}
+
+$('searchOpenBtn').addEventListener('click', openSearch);
+$('searchClose').addEventListener('click', closeSearch);
+$('searchOverlay').addEventListener('click', e => { if (e.target === $('searchOverlay')) closeSearch(); });
+
+$('searchForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const q = $('globalSearchInput').value.trim();
+  if (q.length < 2) { showToast('Tapez au moins 2 caractères', 'error'); return; }
+  const btn = $('globalSearchBtn');
+  btn.disabled = true; btn.textContent = 'Recherche…';
+  $('searchMeta').textContent = '';
+  $('searchResults').innerHTML = '<p class="audit-empty">Recherche en cours dans toutes les instances…</p>';
+  try {
+    const data = await apiFetch('/api/search?q=' + encodeURIComponent(q));
+    renderSearchResults(data);
+  } catch (err) {
+    $('searchResults').innerHTML = `<p class="audit-empty">Erreur : ${escapeHtml(err.message)}</p>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Rechercher';
+  }
+});
+
 /* ── Alert bell ────────────────────────────────────────────────────────────── */
 $('alertBtn').addEventListener('click', e => {
   e.stopPropagation();
@@ -934,7 +993,7 @@ $('bulkApplyEnvBtn').addEventListener('click', async () => {
 
 /* ── Escape key ────────────────────────────────────────────────────────────── */
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeModal(); closeSettings(); closeUpdateGuide(); closeAuditLog(); }
+  if (e.key === 'Escape') { closeModal(); closeSettings(); closeUpdateGuide(); closeAuditLog(); closeSearch(); }
 });
 
 /* ── Auto-refresh ──────────────────────────────────────────────────────────── */

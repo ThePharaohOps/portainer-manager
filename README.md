@@ -59,6 +59,7 @@ Dashboard web sécurisé pour gérer plusieurs instances Portainer depuis une in
 - **Groupement par environnement** : sections Production / Preprod / Recette / Intégration
 - **Tri** : par nom, environnement, statut, version, date d'ajout
 - **Recherche** par nom ou URL
+- **Recherche globale** (icône 🔍) : cherche un conteneur ou une stack par son nom **à travers toutes les instances**, résultats groupés par instance avec lien direct vers Portainer — voir [Recherche globale](#recherche-globale)
 - **Filtre** : Toutes / En ligne / Hors ligne / Mises à jour disponibles
 - **Export CSV** de l'état complet du parc
 - **Actions groupées** (admin) : sélectionner plusieurs instances pour changer leur environnement en masse ou exporter uniquement la sélection en CSV
@@ -67,6 +68,7 @@ Dashboard web sécurisé pour gérer plusieurs instances Portainer depuis une in
 - **Rôle lecture seule (viewer)** optionnel via un claim/groupe OIDC : masque Ajouter/Modifier/Supprimer, Paramètres, Audit et les actions groupées — voir [Rôles admin/viewer (OIDC)](#rôles-adminviewer-oidc)
 - **Journal d'audit** (admin) : historique des créations/modifications/suppressions d'instances, changements de configuration, imports de sauvegarde et connexions — qui a fait quoi et quand
 - **Page de statut publique** en lecture seule, sans authentification (`/status`) : uniquement le nombre d'instances en ligne/hors ligne, sans détail sensible — pratique pour un écran mural
+- **Endpoint Prometheus** (`/metrics`) : statut, conteneurs actifs/arrêtés, stacks, uptime et disponibilité de mise à jour par instance, au format d'exposition Prometheus — voir [Endpoint Prometheus](#endpoint-prometheus)
 
 ### Alertes webhook
 - Notification automatique quand une instance change de statut (online ↔ offline)
@@ -208,6 +210,51 @@ OIDC_ADMIN_GROUP=portainer-admins
 Ce que le rôle **viewer** ne peut pas faire (masqué côté interface **et** rejeté côté API — 403) :
 - Ajouter / modifier / supprimer une instance, actions groupées
 - Accéder aux Paramètres (webhook, rétention, export/import) et au Journal d'audit
+
+---
+
+## Recherche globale
+
+Le bouton 🔍 dans l'en-tête ouvre une recherche par nom de conteneur ou de stack **à travers toutes les instances configurées**, pas seulement par nom/URL d'instance. Accessible aux admins et aux viewers (lecture seule).
+
+- Route : `GET /api/search?q=<terme>` (2 caractères minimum)
+- Pour chaque instance, interroge en parallèle la liste des stacks et, pour chaque environnement Docker, la liste des conteneurs (`GET /api/endpoints/{id}/docker/containers/json?all=true` côté Portainer) — les instances injoignables sont simplement ignorées, pas d'erreur bloquante
+- Résultats groupés par instance, avec lien direct pour l'ouvrir dans Portainer
+
+> Contrairement au reste du dashboard, cette recherche n'est **pas** automatique : elle n'est déclenchée qu'à la demande (bouton "Rechercher"), pour éviter de solliciter les 19 instances à chaque frappe ou à chaque cycle d'auto-refresh.
+
+---
+
+## Endpoint Prometheus
+
+`GET /metrics` expose au format d'exposition Prometheus les métriques déjà collectées par le dashboard : pas de sondage supplémentaire des instances Portainer, juste la dernière donnée connue (alimentée par les mêmes requêtes que l'auto-refresh de l'interface — mêmes limites de fraîcheur que la [page de statut publique](#rôles-et-audit), qui dépend d'au moins un onglet ouvert quelque part).
+
+| Métrique | Description |
+|---|---|
+| `portainer_manager_app_info{version}` | Toujours à 1, `version` = version de l'app |
+| `portainer_manager_instances_total` | Nombre total d'instances configurées |
+| `portainer_manager_instance_up{instance,environment}` | 1 si joignable, 0 sinon |
+| `portainer_manager_instance_containers_running{instance,environment}` | Conteneurs actifs |
+| `portainer_manager_instance_containers_stopped{instance,environment}` | Conteneurs arrêtés |
+| `portainer_manager_instance_stacks{instance,environment}` | Nombre de stacks |
+| `portainer_manager_instance_uptime_ratio{instance,environment}` | Disponibilité sur l'historique conservé (0 à 1) |
+| `portainer_manager_instance_portainer_outdated{instance,environment}` | 1 si une mise à jour Portainer est disponible |
+
+**Authentification** : par défaut, `/metrics` nécessite une session authentifiée (comme le reste du dashboard) — pratique pour tester avec `curl -b cookies.txt`, mais peu adapté à un scraper Prometheus. Définissez `METRICS_TOKEN` dans `.env` pour activer un accès par jeton, sans session :
+
+```env
+METRICS_TOKEN=un-jeton-long-et-aleatoire
+```
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: portainer-manager
+    metrics_path: /metrics
+    bearer_token: un-jeton-long-et-aleatoire
+    static_configs:
+      - targets: ['portainer-manager.example.com']
+```
 
 ---
 
@@ -365,6 +412,8 @@ portainer-manager/
 | GET     | `/api/audit`                   | 200 dernières entrées du journal d'audit — admin |
 | GET     | `/status`                      | Page de statut publique, sans authentification |
 | GET     | `/api/status/public`           | Compteurs agrégés `{total, online, offline, unknown}`, sans authentification |
+| GET     | `/metrics`                     | Métriques Prometheus — session ou `METRICS_TOKEN`, voir [Endpoint Prometheus](#endpoint-prometheus) |
+| GET     | `/api/search`                  | Recherche de conteneurs/stacks par nom à travers toutes les instances (`?q=`) — admin et viewer |
 
 ---
 

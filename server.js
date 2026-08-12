@@ -19,6 +19,7 @@ const UPTIME_FILE  = path.join(__dirname, 'data', 'uptime.json');
 const AUDIT_FILE   = path.join(__dirname, 'data', 'audit.log');
 const SESSION_DIR  = path.join(__dirname, 'data', 'sessions');
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
+const METRICS_TOKEN = process.env.METRICS_TOKEN || null;
 
 // ── OIDC config (optional SSO) ────────────────────────────────────────────────
 const OIDC_ISSUER_URL    = process.env.OIDC_ISSUER_URL;
@@ -59,6 +60,7 @@ app.use((req, res, next) => {
   if (req.path === '/api/auth/methods') return next();
   if (req.path === '/auth/oidc/login' || req.path === '/auth/oidc/callback') return next();
   if (req.path === '/status' || req.path === '/api/status/public') return next();
+  if (req.path === '/metrics') return next(); // own auth check inside the route (bearer token or session)
   if (req.session?.authenticated) return next();
   if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Non authentifié' });
   res.redirect('/login');
@@ -188,6 +190,7 @@ function loadAudit(limit = MAX_AUDIT_ENTRIES_RETURNED) {
 
 // ── Webhook on status change ──────────────────────────────────────────────────
 const statusCache = {};
+const liveDataCache = {}; // last known /api/instances/:id/data result per instance, feeds /metrics
 
 async function sendWebhook(id, name, online, url, environment) {
   const config = loadConfig();
@@ -515,6 +518,78 @@ app.get('/api/status/public', (req, res) => {
   res.json({ total, online, offline, unknown: total - known.length, updatedAt: new Date().toISOString() });
 });
 
+// ── Prometheus metrics ─────────────────────────────────────────────────────────
+function promEscape(v) {
+  return String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+}
+
+function semverLt(a, b) {
+  const pa = String(a).split('.').map(Number);
+  const pb = String(b).split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff < 0;
+  }
+  return false;
+}
+
+app.get('/metrics', (req, res) => {
+  if (METRICS_TOKEN) {
+    const auth = req.get('authorization');
+    const bearer = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
+    if ((bearer || req.query.token) !== METRICS_TOKEN) return res.status(401).type('text/plain').send('Unauthorized\n');
+  } else if (!req.session?.authenticated) {
+    return res.status(401).type('text/plain').send('Unauthorized — configurez METRICS_TOKEN pour le scraping sans session, ou utilisez une session authentifiée\n');
+  }
+
+  const instances = loadInstances();
+  const latest = latestVersionCache.version;
+  const lines = [
+    '# HELP portainer_manager_app_info Informations sur l\'application (toujours à 1).',
+    '# TYPE portainer_manager_app_info gauge',
+    `portainer_manager_app_info{version="${promEscape(APP_VERSION)}"} 1`,
+    '# HELP portainer_manager_instances_total Nombre total d\'instances configurées.',
+    '# TYPE portainer_manager_instances_total gauge',
+    `portainer_manager_instances_total ${instances.length}`,
+    '# HELP portainer_manager_instance_up Dernier statut connu : joignable (1) ou non (0).',
+    '# TYPE portainer_manager_instance_up gauge',
+    '# HELP portainer_manager_instance_containers_running Conteneurs actifs.',
+    '# TYPE portainer_manager_instance_containers_running gauge',
+    '# HELP portainer_manager_instance_containers_stopped Conteneurs arrêtés.',
+    '# TYPE portainer_manager_instance_containers_stopped gauge',
+    '# HELP portainer_manager_instance_stacks Nombre de stacks.',
+    '# TYPE portainer_manager_instance_stacks gauge',
+    '# HELP portainer_manager_instance_uptime_ratio Ratio de disponibilité sur l\'historique conservé (0 à 1).',
+    '# TYPE portainer_manager_instance_uptime_ratio gauge',
+    '# HELP portainer_manager_instance_portainer_outdated Mise à jour Portainer disponible (1) ou non (0).',
+    '# TYPE portainer_manager_instance_portainer_outdated gauge',
+  ];
+
+  for (const inst of instances) {
+    const labels = `instance="${promEscape(inst.name)}",environment="${promEscape(inst.environment || '')}"`;
+    const up = statusCache[inst.id];
+    if (up !== undefined) lines.push(`portainer_manager_instance_up{${labels}} ${up ? 1 : 0}`);
+
+    const cached = liveDataCache[inst.id];
+    if (cached?.online) {
+      lines.push(`portainer_manager_instance_containers_running{${labels}} ${cached.runningContainers}`);
+      lines.push(`portainer_manager_instance_containers_stopped{${labels}} ${cached.stoppedContainers}`);
+      lines.push(`portainer_manager_instance_stacks{${labels}} ${cached.stacksCount}`);
+      if (latest && cached.version) {
+        lines.push(`portainer_manager_instance_portainer_outdated{${labels}} ${semverLt(cached.version, latest) ? 1 : 0}`);
+      }
+    }
+
+    const history = uptimeStore[inst.id];
+    if (history?.length) {
+      const ratio = history.filter(h => h.online).length / history.length;
+      lines.push(`portainer_manager_instance_uptime_ratio{${labels}} ${ratio.toFixed(4)}`);
+    }
+  }
+
+  res.type('text/plain; version=0.0.4; charset=utf-8').send(lines.join('\n') + '\n');
+});
+
 // ── Instances REST API ────────────────────────────────────────────────────────
 const VALID_ENVS = ['integration', 'recette', 'preprod', 'production'];
 
@@ -581,6 +656,7 @@ app.delete('/api/instances/:id', requireAdmin, (req, res) => {
   saveInstances(instances);
   delete uptimeStore[req.params.id];
   delete statusCache[req.params.id];
+  delete liveDataCache[req.params.id];
   uptimeDirty = true;
   logAudit(req.session.user?.username, 'instance:delete', deletedName);
   res.json({ success: true });
@@ -598,12 +674,14 @@ app.get('/api/instances/:id/data', async (req, res) => {
     console.error(`[crypto] Token illisible pour "${instance.name}" — SESSION_SECRET différent de celui utilisé au chiffrement (ex. restauration d'une sauvegarde sur une autre machine sans copier le même SESSION_SECRET).`);
     recordUptime(instance.id, false);
     checkStatusChange(instance.id, instance.name, false, instance.url, instance.environment);
-    return res.json({
+    const result = {
       online: false,
       error: 'Token illisible (SESSION_SECRET incorrect)',
       version: null, dockerVersion: null, endpointsCount: 0, stacksCount: 0,
       runningContainers: 0, stoppedContainers: 0, totalContainers: 0, servicesCount: 0,
-    });
+    };
+    liveDataCache[instance.id] = { ...result, name: instance.name, environment: instance.environment, updatedAt: Date.now() };
+    return res.json(result);
   }
 
   const [statusResult, endpointsResult, stacksResult] = await Promise.allSettled([
@@ -618,7 +696,9 @@ app.get('/api/instances/:id/data', async (req, res) => {
 
   if (!online) {
     const errMsg = statusResult.reason?.code || statusResult.reason?.message || 'Unreachable';
-    return res.json({ online: false, error: errMsg, version: null, dockerVersion: null, endpointsCount: 0, stacksCount: 0, runningContainers: 0, stoppedContainers: 0, totalContainers: 0, servicesCount: 0 });
+    const result = { online: false, error: errMsg, version: null, dockerVersion: null, endpointsCount: 0, stacksCount: 0, runningContainers: 0, stoppedContainers: 0, totalContainers: 0, servicesCount: 0 };
+    liveDataCache[instance.id] = { ...result, name: instance.name, environment: instance.environment, updatedAt: Date.now() };
+    return res.json(result);
   }
 
   const version   = statusResult.value?.data?.Version ?? 'Unknown';
@@ -642,7 +722,59 @@ app.get('/api/instances/:id/data', async (req, res) => {
     ? [...dockerVersions][0]
     : dockerVersions.size > 1 ? [...dockerVersions].join(', ') : null;
 
-  res.json({ online: true, version, dockerVersion, endpointsCount: endpoints.length, stacksCount: stacks.length, runningContainers, stoppedContainers, totalContainers: runningContainers + stoppedContainers, servicesCount });
+  const result = { online: true, version, dockerVersion, endpointsCount: endpoints.length, stacksCount: stacks.length, runningContainers, stoppedContainers, totalContainers: runningContainers + stoppedContainers, servicesCount };
+  liveDataCache[instance.id] = { ...result, name: instance.name, environment: instance.environment, updatedAt: Date.now() };
+  res.json(result);
+});
+
+// ── Recherche globale (conteneurs/stacks à travers tout le parc) ─────────────
+app.get('/api/search', async (req, res) => {
+  const q = (req.query.q || '').toString().trim().toLowerCase();
+  if (q.length < 2) return res.status(400).json({ error: 'Requête trop courte (2 caractères minimum)' });
+
+  const instances = loadInstances();
+
+  const settled = await Promise.allSettled(instances.map(async (inst) => {
+    const token = decryptToken(inst.token);
+    const match = { instanceId: inst.id, instanceName: inst.name, environment: inst.environment, containers: [], stacks: [] };
+
+    const [endpointsRes, stacksRes] = await Promise.allSettled([
+      portainerGet(inst.url, token, '/api/endpoints?limit=100'),
+      portainerGet(inst.url, token, '/api/stacks'),
+    ]);
+
+    if (stacksRes.status === 'fulfilled') {
+      for (const stack of stacksRes.value.data ?? []) {
+        if ((stack.Name || '').toLowerCase().includes(q)) {
+          match.stacks.push({ id: stack.Id, name: stack.Name });
+        }
+      }
+    }
+
+    const endpoints = endpointsRes.status === 'fulfilled' ? (endpointsRes.value.data ?? []) : [];
+    const containerLists = await Promise.allSettled(
+      endpoints.map(ep => portainerGet(inst.url, token, `/api/endpoints/${ep.Id}/docker/containers/json?all=true`))
+    );
+    endpoints.forEach((ep, i) => {
+      const cRes = containerLists[i];
+      if (cRes.status !== 'fulfilled') return;
+      for (const c of cRes.value.data ?? []) {
+        const name = (c.Names?.[0] || '').replace(/^\//, '');
+        if (name.toLowerCase().includes(q)) {
+          match.containers.push({ name, image: c.Image, state: c.State, endpoint: ep.Name });
+        }
+      }
+    });
+
+    return match;
+  }));
+
+  const results = settled
+    .filter(r => r.status === 'fulfilled')
+    .map(r => r.value)
+    .filter(m => m.containers.length > 0 || m.stacks.length > 0);
+
+  res.json({ query: q, instancesSearched: instances.length, results });
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────

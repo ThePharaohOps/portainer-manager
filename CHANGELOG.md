@@ -4,6 +4,13 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 
 Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/), le projet respecte le [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [1.2.0] - 2026-08-12
+
+### Ajouté
+- **Endpoint Prometheus** (`/metrics`) : statut, conteneurs actifs/arrêtés, stacks, ratio de disponibilité et disponibilité de mise à jour par instance, au format d'exposition Prometheus. Alimenté par les données déjà collectées (pas de sondage supplémentaire des instances Portainer). Accès par session ou par `METRICS_TOKEN` (bearer token ou `?token=`) pour un scraping sans session.
+- **Recherche globale** (icône 🔍) : recherche un conteneur ou une stack par son nom à travers toutes les instances configurées, résultats groupés par instance avec lien direct vers Portainer. Déclenchée à la demande, pas automatique.
+- `OIDC_ROLE_CLAIM` et `OIDC_ADMIN_GROUP` (rôles) ainsi que `METRICS_TOKEN` sont désormais transmis par `docker-compose.yml` — ils manquaient depuis leur introduction et n'étaient utilisables qu'en `docker run` direct.
+
 ## [1.1.2] - 2026-08-12
 
 ### Corrigé
