@@ -337,6 +337,14 @@ app.get('/api/auth/methods', (req, res) => {
 });
 
 // ── OIDC (SSO) ─────────────────────────────────────────────────────────────────
+function logOidcError(prefix, e) {
+  const parts = [e.message];
+  if (e.error) parts.push(`error=${e.error}`);
+  if (e.error_description) parts.push(`error_description="${e.error_description}"`);
+  if (e.status) parts.push(`status=${e.status}`);
+  console.error(prefix, parts.join(' | '));
+}
+
 app.get('/auth/oidc/login', async (req, res) => {
   if (!OIDC_ENABLED || !oidcConfig) return res.status(503).send('OIDC non configuré');
   try {
@@ -353,7 +361,7 @@ app.get('/auth/oidc/login', async (req, res) => {
     });
     res.redirect(redirectTo.href);
   } catch (e) {
-    console.error('[oidc] Échec de démarrage de connexion:', e.message);
+    logOidcError('[oidc] Échec de démarrage de connexion:', e);
     res.redirect('/login?error=oidc');
   }
 });
@@ -374,7 +382,7 @@ app.get('/auth/oidc/callback', async (req, res) => {
     logAudit(username, 'auth:login', 'oidc');
     res.redirect('/');
   } catch (e) {
-    console.error('[oidc] Échec de connexion:', e.message);
+    logOidcError('[oidc] Échec de connexion:', e);
     res.redirect('/login?error=oidc');
   }
 });
