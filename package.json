@@ -1,6 +1,6 @@
 {
   "name": "portainer-manager",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Multi-instance Portainer management dashboard",
   "license": "GPL-3.0",
   "main": "server.js",
@@ -9,13 +9,13 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "axios": "^1.19.0",
+    "axios": "^1.20.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
-    "openid-client": "^6.8.5",
+    "openid-client": "^6.8.7",
     "session-file-store": "^1.5.0",
-    "uuid": "^14.0.1"
+    "uuid": "^14.0.2"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"

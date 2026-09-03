@@ -4,6 +4,14 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 
 Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/), le projet respecte le [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [1.2.2] - 2026-09-03
+
+### Corrigé
+- `qs` (dépendance transitive d'Express) : vulnérabilité modérée (contournement de limite de tableau, DoS) corrigée via `npm audit fix`.
+
+### Modifié
+- Mise à jour de dépendances : `axios` 1.19.0 → 1.20.0, `openid-client` 6.8.5 → 6.8.7, `uuid` 14.0.1 → 14.0.2.
+
 ## [1.2.1] - 2026-08-12
 
 ### Corrigé
