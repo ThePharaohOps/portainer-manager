@@ -4,178 +4,182 @@
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-24--alpine-339933?logo=node.js&logoColor=white)](Dockerfile)
 
-Dashboard web sécurisé pour gérer plusieurs instances Portainer depuis une interface unique.
+🇫🇷 [Lire en français](README.fr.md)
 
-## Aperçu
+Secure web dashboard for managing multiple Portainer instances from a single interface.
 
-> Noms et URLs anonymisés dans ces captures — l'interface réelle affiche vos propres instances.
+> **Note**: this documentation is available in English and French, but the application's own interface is currently **French-only** (no i18n yet) — see the screenshots below for exactly what you'll see on screen.
 
-**Vue grille**
-![Vue grille](screenshots/dashboard-grid.png)
+## Overview
 
-**Vue liste**
-![Vue liste](screenshots/dashboard-list.png)
+> Names and URLs are anonymized in these screenshots — the real interface shows your own instances.
 
-**Guide de mise à jour**
-![Guide de mise à jour](screenshots/update-guide-modal.png)
+**Grid view**
+![Grid view](screenshots/dashboard-grid.png)
 
-**Paramètres**
-![Paramètres](screenshots/settings-modal.png)
+**List view**
+![List view](screenshots/dashboard-list.png)
 
-**Journal d'audit**
-![Journal d'audit](screenshots/audit-log-modal.png)
+**Update guide**
+![Update guide](screenshots/update-guide-modal.png)
 
-**Actions groupées**
-![Actions groupées](screenshots/bulk-toolbar.png)
+**Settings**
+![Settings](screenshots/settings-modal.png)
 
-**Connexion**
-![Page de connexion](screenshots/login.png)
+**Audit log**
+![Audit log](screenshots/audit-log-modal.png)
 
-## Fonctionnalités
+**Bulk actions**
+![Bulk actions](screenshots/bulk-toolbar.png)
+
+**Login**
+![Login page](screenshots/login.png)
+
+## Features
 
 ### Dashboard
-- Stats globales : instances totales, en ligne, hors ligne, conteneurs, stacks, dernière version CE
-- **Alerte cloche** : liste des instances Portainer à mettre à jour, triées de la plus ancienne version à la plus récente
-- **Auto-refresh** toutes les 30 secondes avec compte à rebours visible
+- Global stats: total instances, online, offline, containers, stacks, latest CE version
+- **Alert bell**: list of Portainer instances that need updating, sorted from oldest to newest version
+- **Auto-refresh** every 30 seconds with a visible countdown
 
-### Gestion des instances
-- **Ajout** via URL + API Token uniquement (pas de login/mot de passe Portainer)
-- **Modification** : nom, URL, token, environnement, notes
-- **Suppression** avec confirmation
-- **Bouton "Ouvrir"** pour accéder directement à l'instance Portainer
+### Instance management
+- **Add** via URL + API token only (no Portainer login/password)
+- **Edit**: name, URL, token, environment, notes
+- **Delete** with confirmation
+- **"Open" button** to jump straight to the Portainer instance
 
 ### Cards
-- Statut en ligne / hors ligne avec bordure colorée (vert/rouge)
-- Badge d'**environnement** coloré : Intégration, Recette, Pré-production, Production
-- Métriques : environnements, conteneurs actifs/arrêtés, stacks, services Swarm
-- Versions **Portainer** et **Docker** avec logos
-- Badge **"À jour"** ou **"vX.X.X disponible"** par comparaison avec la dernière CE
-- Bouton **"Mettre à jour"** sur les instances obsolètes : ouvre une popup avec les commandes adaptées (Docker standalone ou Swarm, détecté automatiquement)
-- **Notes** libres affichées sur la card
-- **Uptime sparkline** : historique des 288 dernières vérifications (~2.4h) avec pourcentage
+- Online / offline status with a colored border (green/red)
+- Colored **environment** badge: Intégration, Recette, Pré-production, Production *(these four labels are currently French-only in the UI — see note above)*
+- Metrics: environments, running/stopped containers, stacks, Swarm services
+- **Portainer** and **Docker** versions with logos
+- **"Up to date"** or **"vX.X.X available"** badge, compared against the latest CE release
+- **"Update"** button on outdated instances: opens a popup with the right commands (Docker standalone or Swarm, auto-detected)
+- Free-text **notes** shown on the card
+- **Uptime sparkline**: history of the last 288 checks (~2.4h) with a percentage
 
-### Vues et navigation
-- **Vue grille** (défaut) ou **vue liste** (tableau dense)
-- **Groupement par environnement** : sections Production / Preprod / Recette / Intégration
-- **Tri** : par nom, environnement, statut, version, date d'ajout
-- **Recherche** par nom ou URL
-- **Recherche globale** (icône 🔍) : cherche un conteneur ou une stack par son nom **à travers toutes les instances**, résultats groupés par instance avec lien direct vers Portainer — voir [Recherche globale](#recherche-globale)
-- **Filtre** : Toutes / En ligne / Hors ligne / Mises à jour disponibles
-- **Export CSV** de l'état complet du parc
-- **Actions groupées** (admin) : sélectionner plusieurs instances pour changer leur environnement en masse ou exporter uniquement la sélection en CSV
+### Views and navigation
+- **Grid view** (default) or **list view** (dense table)
+- **Group by environment**: Production / Pré-production / Recette / Intégration sections
+- **Sort**: by name, environment, status, version, date added
+- **Search** by name or URL
+- **Global search** (🔍 icon): find a container or a stack by name **across every instance**, results grouped by instance with a direct link to Portainer — see [Global search](#global-search)
+- **Filter**: All / Online / Offline / Updates available
+- **CSV export** of the whole fleet's state
+- **Bulk actions** (admin): select multiple instances to change their environment in bulk or export only the selection to CSV
 
-### Rôles et audit
-- **Rôle lecture seule (viewer)** optionnel via un claim/groupe OIDC : masque Ajouter/Modifier/Supprimer, Paramètres, Audit et les actions groupées — voir [Rôles admin/viewer (OIDC)](#rôles-adminviewer-oidc)
-- **Journal d'audit** (admin) : historique des créations/modifications/suppressions d'instances, changements de configuration, imports de sauvegarde et connexions — qui a fait quoi et quand
-- **Page de statut publique** en lecture seule, sans authentification (`/status`) : uniquement le nombre d'instances en ligne/hors ligne, sans détail sensible — pratique pour un écran mural
-- **Endpoint Prometheus** (`/metrics`) : statut, conteneurs actifs/arrêtés, stacks, uptime et disponibilité de mise à jour par instance, au format d'exposition Prometheus — voir [Endpoint Prometheus](#endpoint-prometheus)
+### Roles and audit
+- Optional **read-only role (viewer)** via an OIDC claim/group: hides Add/Edit/Delete, Settings, Audit and bulk actions — see [Admin/viewer roles (OIDC)](#adminviewer-roles-oidc)
+- **Audit log** (admin): history of instance creations/edits/deletions, configuration changes, backup imports and logins — who did what, and when
+- **Public status page**, read-only and unauthenticated (`/status`): only the count of online/offline instances, no sensitive detail — handy for a wall display
+- **Prometheus endpoint** (`/metrics`): status, running/stopped containers, stacks, uptime and update availability per instance, in Prometheus exposition format — see [Prometheus endpoint](#prometheus-endpoint)
 
-### Alertes webhook
-- Notification automatique quand une instance change de statut (online ↔ offline)
-- Support : **Slack**, **Microsoft Teams**, **Generic JSON**
-- **Filtre par environnement** : notifier uniquement Production, par exemple (aucune coche = tous)
-- Bouton "Tester" dans les paramètres
+### Webhook alerts
+- Automatic notification when an instance changes status (online ↔ offline)
+- Supports: **Slack**, **Microsoft Teams**, **Generic JSON**
+- **Filter by environment**: only notify for Production, for example (no checkbox ticked = all)
+- "Test" button in settings
 
-### Paramètres (bouton ⚙️)
-- **Webhook** : type, URL, filtre par environnement, test
-- **Affichage** : intervalle d'auto-refresh (15s / 30s / 1min / 5min)
-- **Historique uptime** : nombre de points conservés par instance (remplace la constante fixe de 288)
-- **Statut SSO** : activé/désactivé, fournisseur, lien de test rapide
-- **Sauvegarde** : export/import JSON de la configuration complète (instances + tokens chiffrés + réglages) — voir [Sauvegarde et restauration](#sauvegarde-et-restauration)
+### Settings (⚙️ button)
+- **Webhook**: type, URL, environment filter, test
+- **Display**: auto-refresh interval (15s / 30s / 1min / 5min)
+- **Uptime history**: number of points kept per instance (replaces the old fixed constant of 288)
+- **SSO status**: enabled/disabled, provider, quick test link
+- **Backup**: export/import the full configuration as JSON (instances + encrypted tokens + settings) — see [Backup and restore](#backup-and-restore)
 
-### Sécurité
-- **Authentification** par mot de passe partagé, avec session 8h persistée sur disque (`data/sessions/`) : un redémarrage du conteneur ne déconnecte pas les sessions actives
-- **SSO / OIDC** optionnel (Azure AD/Entra ID, Okta, Keycloak, Google Workspace, Authentik...) : se superpose au mot de passe local, qui reste toujours disponible en secours — voir [Configurer le SSO (OIDC)](#configurer-le-sso-oidc)
-- **Tokens API chiffrés au repos** (AES-256-GCM, clé dérivée de `SESSION_SECRET`) dans `data/instances.json`
-- Les tokens API ne sont **jamais** transmis au navigateur
-- Les appels vers l'API Portainer sont effectués côté serveur uniquement
-- Certificats TLS auto-signés acceptés (fréquent en local)
-
----
-
-## Prérequis
-
-- **Docker** (recommandé) — l'image utilise `node:24-alpine` (dernière LTS active) et embarque un `HEALTHCHECK` (`docker ps` reflète l'état réel de l'app, utile derrière Swarm/Kubernetes/Traefik)
-- **ou** Node.js 18+ en local (minimum imposé par Express 5)
+### Security
+- **Authentication** via a shared password, with an 8h session persisted to disk (`data/sessions/`): restarting the container doesn't log active sessions out
+- Optional **SSO / OIDC** (Azure AD/Entra ID, Okta, Keycloak, Google Workspace, Authentik...): layers on top of the local password, which always stays available as a fallback — see [Configure SSO (OIDC)](#configure-sso-oidc)
+- **API tokens encrypted at rest** (AES-256-GCM, key derived from `SESSION_SECRET`) in `data/instances.json`
+- API tokens are **never** sent to the browser
+- Calls to the Portainer API are made server-side only
+- Self-signed TLS certificates are accepted (common in local setups)
 
 ---
 
-## Démarrage rapide
+## Prerequisites
 
-### Avec Docker (recommandé)
+- **Docker** (recommended) — the image uses `node:24-alpine` (latest active LTS) and ships a `HEALTHCHECK` (`docker ps` reflects the app's real state, useful behind Swarm/Kubernetes/Traefik)
+- **or** Node.js 18+ locally (minimum required by Express 5)
+
+---
+
+## Quick start
+
+### With Docker (recommended)
 
 ```bash
-# Copier et configurer les variables
-cp .env.example .env   # ou éditer .env directement
+# Copy and configure the variables
+cp .env.example .env   # or edit .env directly
 
 docker compose up -d
 ```
 
-### En local (Node.js)
+### Locally (Node.js)
 
 ```bash
 npm install
 npm start
 ```
 
-Pour le développement avec rechargement automatique :
+For development with hot reload:
 
 ```bash
 npm run dev
 ```
 
-L'application est accessible sur **http://localhost:3000** (ou l'IP définie dans `HOST_IP`).
+The app is available at **http://localhost:3000** (or the IP set in `HOST_IP`).
 
 ---
 
-## Configuration — fichier `.env`
+## Configuration — `.env` file
 
-| Variable         | Défaut                        | Description                              |
-|------------------|-------------------------------|------------------------------------------|
-| `PORT`           | `3000`                        | Port d'écoute du serveur                 |
-| `HOST_IP`        | *(toutes les interfaces)*     | IP affichée au démarrage dans les logs   |
-| `ADMIN_PASSWORD` | `admin`                       | ⚠️ Mot de passe du dashboard — à changer |
-| `SESSION_SECRET` | *(aléatoire à chaque restart)*| Clé de signature des sessions et de chiffrement des tokens API |
+| Variable         | Default                        | Description                              |
+|------------------|---------------------------------|-------------------------------------------|
+| `PORT`           | `3000`                          | Server listen port                        |
+| `HOST_IP`        | *(all interfaces)*              | IP shown in the startup logs              |
+| `ADMIN_PASSWORD` | `admin`                         | ⚠️ Dashboard password — change this       |
+| `SESSION_SECRET` | *(random on every restart)*     | Key used to sign sessions and encrypt API tokens |
 
-> **Important** : sans `SESSION_SECRET` fixe, les sessions sont invalidées **et les tokens API chiffrés deviennent illisibles** à chaque redémarrage.
+> **Important**: without a fixed `SESSION_SECRET`, sessions are invalidated **and encrypted API tokens become unreadable** on every restart.
 
-Exemple de `.env` :
+Example `.env`:
 
 ```env
 HOST_IP=192.168.1.100
-ADMIN_PASSWORD=MonMotDePasseSecurisé
-SESSION_SECRET=une-chaine-aleatoire-longue-et-unique
+ADMIN_PASSWORD=MySecurePassword
+SESSION_SECRET=a-long-random-unique-string
 PORT=3000
 ```
 
 ---
 
-## Configurer le SSO (OIDC)
+## Configure SSO (OIDC)
 
-En plus du mot de passe partagé, l'application peut déléguer l'authentification à n'importe quel fournisseur **OpenID Connect** (Azure AD/Entra ID, Okta, Keycloak, Google Workspace, Authentik, etc.) via `openid-client`. Le mot de passe local **reste toujours actif** en secours, même si le SSO est configuré.
+In addition to the shared password, the app can delegate authentication to any **OpenID Connect** provider (Azure AD/Entra ID, Okta, Keycloak, Google Workspace, Authentik, etc.) via `openid-client`. The local password **always stays active** as a fallback, even when SSO is configured.
 
-| Variable              | Défaut                | Description                                                        |
-|------------------------|------------------------|----------------------------------------------------------------------|
-| `OIDC_ISSUER_URL`       | *(désactivé si vide)* | URL de l'issuer OIDC (découverte via `/.well-known/openid-configuration`) |
-| `OIDC_CLIENT_ID`        |                        | Client ID enregistré auprès du fournisseur                          |
-| `OIDC_CLIENT_SECRET`    |                        | Client secret correspondant                                         |
-| `OIDC_REDIRECT_URI`     |                        | URL de callback, doit être **exactement** celle enregistrée chez le fournisseur (ex. `https://portainer-manager.example.com/auth/oidc/callback`) |
-| `OIDC_SCOPE`            | `openid profile email`| Scopes demandés                                                     |
-| `OIDC_DISPLAY_NAME`     | `SSO`                  | Libellé du bouton sur la page de connexion (ex. `Entra ID`, `Okta`) |
-| `OIDC_ALLOW_INSECURE`   | `false`                | `true` pour autoriser un issuer en HTTP ou avec certificat auto-signé — **dev/test uniquement**, jamais en production |
+| Variable                | Default                | Description                                                        |
+|--------------------------|--------------------------|------------------------------------------------------------------------|
+| `OIDC_ISSUER_URL`         | *(disabled if empty)*   | OIDC issuer URL (discovered via `/.well-known/openid-configuration`) |
+| `OIDC_CLIENT_ID`          |                          | Client ID registered with the provider                             |
+| `OIDC_CLIENT_SECRET`      |                          | Matching client secret                                              |
+| `OIDC_REDIRECT_URI`       |                          | Callback URL, must **exactly** match the one registered with the provider (e.g. `https://portainer-manager.example.com/auth/oidc/callback`) |
+| `OIDC_SCOPE`              | `openid profile email`  | Requested scopes                                                    |
+| `OIDC_DISPLAY_NAME`       | `SSO`                    | Button label on the login page (e.g. `Entra ID`, `Okta`)            |
+| `OIDC_ALLOW_INSECURE`     | `false`                  | `true` to allow an HTTP issuer or a self-signed certificate — **dev/test only**, never in production |
 
-Les trois variables `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID` et `OIDC_CLIENT_SECRET` (+ `OIDC_REDIRECT_URI`) sont **toutes requises** pour activer le SSO ; si l'une manque, seul le mot de passe local est proposé.
+The three variables `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET` (+ `OIDC_REDIRECT_URI`) are **all required** to enable SSO; if any is missing, only the local password is offered.
 
-### Exemple — Keycloak
+### Example — Keycloak
 ```env
-OIDC_ISSUER_URL=https://keycloak.example.com/realms/mon-realm
+OIDC_ISSUER_URL=https://keycloak.example.com/realms/my-realm
 OIDC_CLIENT_ID=portainer-manager
 OIDC_CLIENT_SECRET=xxxxxxxx
 OIDC_REDIRECT_URI=https://portainer-manager.example.com/auth/oidc/callback
 OIDC_DISPLAY_NAME=Keycloak
 ```
 
-### Exemple — Azure AD / Entra ID
+### Example — Azure AD / Entra ID
 ```env
 OIDC_ISSUER_URL=https://login.microsoftonline.com/<tenant-id>/v2.0
 OIDC_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
@@ -184,66 +188,66 @@ OIDC_REDIRECT_URI=https://portainer-manager.example.com/auth/oidc/callback
 OIDC_DISPLAY_NAME=Entra ID
 ```
 
-Dans les deux cas, il faut déclarer `OIDC_REDIRECT_URI` comme URI de redirection autorisée côté fournisseur (type "Web"/"Authorization Code").
+In both cases, `OIDC_REDIRECT_URI` must be declared as an authorized redirect URI on the provider's side (type "Web"/"Authorization Code").
 
-> Derrière un reverse proxy, la valeur exacte d'`OIDC_REDIRECT_URI` est toujours utilisée pour l'échange du code (indépendamment de ce que le proxy transmet comme en-tête `Host`) — pas besoin de configurer `trust proxy` pour que le SSO fonctionne. Si vous obtenez `invalid_grant` / "Incorrect redirect_uri" (Keycloak) ou équivalent malgré tout, vérifiez d'abord que la valeur d'`OIDC_REDIRECT_URI` correspond **caractère pour caractère** à l'URI enregistrée côté fournisseur.
+> Behind a reverse proxy, the exact value of `OIDC_REDIRECT_URI` is always used for the code exchange (regardless of what `Host` header the proxy forwards) — no need to configure `trust proxy` for SSO to work. If you still get `invalid_grant` / "Incorrect redirect_uri" (Keycloak) or the equivalent elsewhere, first check that `OIDC_REDIRECT_URI` matches the URI registered with the provider **character for character**.
 
-> **Pourquoi pas LDAP ?** La seule bibliothèque LDAP viable pour Node.js (`ldapjs`, et tout ce qui en dépend comme `passport-ldapauth`) a été [officiellement décommissionnée](https://github.com/ldapjs/node-ldapjs) par son mainteneur, sans successeur maintenu. OIDC est privilégié car activement maintenu et couvre la quasi-totalité des annuaires d'entreprise modernes (y compris Active Directory via ADFS ou Entra ID).
+> **Why not LDAP?** The only viable LDAP library for Node.js (`ldapjs`, and everything that depends on it such as `passport-ldapauth`) was [officially decommissioned](https://github.com/ldapjs/node-ldapjs) by its maintainer, with no maintained successor. OIDC is favored instead because it's actively maintained and covers nearly every modern enterprise directory (including Active Directory via ADFS or Entra ID).
 
 ---
 
-## Rôles admin/viewer (OIDC)
+## Admin/viewer roles (OIDC)
 
-Par défaut, tout utilisateur authentifié (mot de passe local ou SSO) a un accès complet (**admin**). Il est possible de restreindre les utilisateurs SSO à un rôle **viewer** (lecture seule) selon un claim/groupe renvoyé par le fournisseur OIDC. Le mot de passe local reste toujours **admin**, quel que soit ce réglage.
+By default, any authenticated user (local password or SSO) gets full (**admin**) access. SSO users can be restricted to a **viewer** (read-only) role based on a claim/group returned by the OIDC provider. The local password account always stays **admin**, regardless of this setting.
 
-| Variable          | Défaut     | Description                                                                 |
-|-------------------|------------|-------------------------------------------------------------------------------|
-| `OIDC_ROLE_CLAIM`  | `groups`   | Nom du claim ID Token contenant les groupes/rôles de l'utilisateur           |
-| `OIDC_ADMIN_GROUP` | *(aucun)*  | Valeur du claim qui donne le rôle admin. Si absent, **tous les utilisateurs SSO sont admin** (comportement actuel inchangé) |
+| Variable            | Default    | Description                                                                 |
+|---------------------|------------|--------------------------------------------------------------------------------|
+| `OIDC_ROLE_CLAIM`    | `groups`   | Name of the ID Token claim holding the user's groups/roles                    |
+| `OIDC_ADMIN_GROUP`   | *(none)*   | Claim value that grants the admin role. If unset, **every SSO user is admin** (unchanged default behavior) |
 
-Exemple — seuls les membres du groupe `portainer-admins` (Keycloak, Entra ID...) sont admin, les autres utilisateurs SSO sont en lecture seule :
+Example — only members of the `portainer-admins` group (Keycloak, Entra ID...) are admin, other SSO users are read-only:
 ```env
 OIDC_ROLE_CLAIM=groups
 OIDC_ADMIN_GROUP=portainer-admins
 ```
 
-Ce que le rôle **viewer** ne peut pas faire (masqué côté interface **et** rejeté côté API — 403) :
-- Ajouter / modifier / supprimer une instance, actions groupées
-- Accéder aux Paramètres (webhook, rétention, export/import) et au Journal d'audit
+What the **viewer** role cannot do (hidden in the UI **and** rejected by the API — 403):
+- Add / edit / delete an instance, bulk actions
+- Access Settings (webhook, retention, export/import) and the Audit log
 
 ---
 
-## Recherche globale
+## Global search
 
-Le bouton 🔍 dans l'en-tête ouvre une recherche par nom de conteneur ou de stack **à travers toutes les instances configurées**, pas seulement par nom/URL d'instance. Accessible aux admins et aux viewers (lecture seule).
+The 🔍 button in the header opens a search by container or stack name **across every configured instance**, not just by instance name/URL. Available to both admins and viewers (read-only).
 
-- Route : `GET /api/search?q=<terme>` (2 caractères minimum)
-- Pour chaque instance, interroge en parallèle la liste des stacks et, pour chaque environnement Docker, la liste des conteneurs (`GET /api/endpoints/{id}/docker/containers/json?all=true` côté Portainer) — les instances injoignables sont simplement ignorées, pas d'erreur bloquante
-- Résultats groupés par instance, avec lien direct pour l'ouvrir dans Portainer
+- Route: `GET /api/search?q=<term>` (2 characters minimum)
+- For each instance, queries the list of stacks in parallel and, for every Docker environment, the list of containers (`GET /api/endpoints/{id}/docker/containers/json?all=true` on Portainer's side) — unreachable instances are simply skipped, no blocking error
+- Results grouped by instance, with a direct link to open it in Portainer
 
-> Contrairement au reste du dashboard, cette recherche n'est **pas** automatique : elle n'est déclenchée qu'à la demande (bouton "Rechercher"), pour éviter de solliciter les 19 instances à chaque frappe ou à chaque cycle d'auto-refresh.
+> Unlike the rest of the dashboard, this search is **not** automatic: it only runs on demand (the "Search" button), to avoid hitting every instance on each keystroke or auto-refresh cycle.
 
 ---
 
-## Endpoint Prometheus
+## Prometheus endpoint
 
-`GET /metrics` expose au format d'exposition Prometheus les métriques déjà collectées par le dashboard : pas de sondage supplémentaire des instances Portainer, juste la dernière donnée connue (alimentée par les mêmes requêtes que l'auto-refresh de l'interface — mêmes limites de fraîcheur que la [page de statut publique](#rôles-et-audit), qui dépend d'au moins un onglet ouvert quelque part).
+`GET /metrics` exposes, in Prometheus exposition format, the metrics the dashboard already collects: no extra polling of Portainer instances, just the last known data (fed by the same requests as the UI's auto-refresh — same freshness caveat as the [public status page](#roles-and-audit), which depends on at least one browser tab being open somewhere).
 
-| Métrique | Description |
+| Metric | Description |
 |---|---|
-| `portainer_manager_app_info{version}` | Toujours à 1, `version` = version de l'app |
-| `portainer_manager_instances_total` | Nombre total d'instances configurées |
-| `portainer_manager_instance_up{instance,environment}` | 1 si joignable, 0 sinon |
-| `portainer_manager_instance_containers_running{instance,environment}` | Conteneurs actifs |
-| `portainer_manager_instance_containers_stopped{instance,environment}` | Conteneurs arrêtés |
-| `portainer_manager_instance_stacks{instance,environment}` | Nombre de stacks |
-| `portainer_manager_instance_uptime_ratio{instance,environment}` | Disponibilité sur l'historique conservé (0 à 1) |
-| `portainer_manager_instance_portainer_outdated{instance,environment}` | 1 si une mise à jour Portainer est disponible |
+| `portainer_manager_app_info{version}` | Always 1, `version` = app version |
+| `portainer_manager_instances_total` | Total number of configured instances |
+| `portainer_manager_instance_up{instance,environment}` | 1 if reachable, 0 otherwise |
+| `portainer_manager_instance_containers_running{instance,environment}` | Running containers |
+| `portainer_manager_instance_containers_stopped{instance,environment}` | Stopped containers |
+| `portainer_manager_instance_stacks{instance,environment}` | Number of stacks |
+| `portainer_manager_instance_uptime_ratio{instance,environment}` | Availability over the retained history (0 to 1) |
+| `portainer_manager_instance_portainer_outdated{instance,environment}` | 1 if a Portainer update is available |
 
-**Authentification** : par défaut, `/metrics` nécessite une session authentifiée (comme le reste du dashboard) — pratique pour tester avec `curl -b cookies.txt`, mais peu adapté à un scraper Prometheus. Définissez `METRICS_TOKEN` dans `.env` pour activer un accès par jeton, sans session :
+**Authentication**: by default, `/metrics` requires an authenticated session (like the rest of the dashboard) — fine for testing with `curl -b cookies.txt`, but not great for a Prometheus scraper. Set `METRICS_TOKEN` in `.env` to enable token-based access without a session:
 
 ```env
-METRICS_TOKEN=un-jeton-long-et-aleatoire
+METRICS_TOKEN=a-long-random-token
 ```
 
 ```yaml
@@ -251,21 +255,21 @@ METRICS_TOKEN=un-jeton-long-et-aleatoire
 scrape_configs:
   - job_name: portainer-manager
     metrics_path: /metrics
-    bearer_token: un-jeton-long-et-aleatoire
+    bearer_token: a-long-random-token
     static_configs:
       - targets: ['portainer-manager.example.com']
 ```
 
 ---
 
-## Mettre l'application derrière un reverse proxy
+## Running behind a reverse proxy
 
-L'app écoute en HTTP simple sur le port interne défini par `PORT` (3000 par défaut), exposé côté hôte via le mapping défini dans `docker-compose.yml` (ex. `127.0.0.1:3001:3000`). Un reverse proxy permet d'ajouter un nom de domaine et le TLS/HTTPS devant.
+The app listens on plain HTTP on the internal port set by `PORT` (3000 by default), exposed on the host via the mapping in `docker-compose.yml` (e.g. `127.0.0.1:3001:3000`). A reverse proxy lets you add a domain name and TLS/HTTPS in front of it.
 
-Dans tous les cas :
-- Adaptez `proxy_pass` / `reverse_proxy` au port réellement exposé côté hôte (celui de `ports:` dans `docker-compose.yml`, pas forcément 3000).
-- Le cookie de session n'est pas marqué `Secure`, donc il fonctionne tel quel derrière un proxy qui termine le TLS (le trajet proxy → app reste en HTTP interne). Pas de configuration supplémentaire côté app nécessaire.
-- Pensez à garder `SESSION_SECRET` fixe dans `.env` (voir plus haut).
+In every case:
+- Adjust `proxy_pass` / `reverse_proxy` to the port actually exposed on the host (the one in `ports:` in `docker-compose.yml`, not necessarily 3000).
+- The session cookie isn't marked `Secure`, so it works as-is behind a proxy that terminates TLS (the proxy → app hop stays plain HTTP internally). No extra app-side configuration needed.
+- Keep `SESSION_SECRET` fixed in `.env` (see above).
 
 ### Nginx
 
@@ -289,7 +293,7 @@ server {
 
 ### Caddy
 
-Le TLS est géré automatiquement (Let's Encrypt) — pas de config manuelle des certificats.
+TLS is handled automatically (Let's Encrypt) — no manual certificate configuration.
 
 ```caddyfile
 portainer-manager.example.com {
@@ -299,12 +303,12 @@ portainer-manager.example.com {
 
 ### Traefik
 
-Si Traefik tourne déjà via Docker sur le même hôte, ajoutez ces labels au service dans `docker-compose.yml` (et retirez le mapping `ports:` si Traefik doit être le seul point d'entrée) :
+If Traefik is already running via Docker on the same host, add these labels to the service in `docker-compose.yml` (and remove the `ports:` mapping if Traefik should be the only entry point):
 
 ```yaml
 services:
   portainer-manager:
-    # ... reste de la config inchangé ...
+    # ... rest of the config unchanged ...
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.portainer-manager.rule=Host(`portainer-manager.example.com`)"
@@ -321,7 +325,7 @@ networks:
 
 ### Apache
 
-Nécessite les modules `proxy` et `proxy_http` (`a2enmod proxy proxy_http` puis reload).
+Requires the `proxy` and `proxy_http` modules (`a2enmod proxy proxy_http` then reload).
 
 ```apache
 <VirtualHost *:443>
@@ -340,100 +344,101 @@ Nécessite les modules `proxy` et `proxy_http` (`a2enmod proxy proxy_http` puis 
 
 ---
 
-## Créer un API Token Portainer
+## Create a Portainer API token
 
-1. Connectez-vous à votre instance Portainer
-2. Cliquez sur votre nom d'utilisateur en haut à droite → **Mon compte**
-3. Section **Access tokens** → **Add access token**
-4. Donnez un nom, copiez le token généré (format `ptr_…`)
+1. Log into your Portainer instance
+2. Click your username in the top right → **My account**
+3. **Access tokens** section → **Add access token**
+4. Give it a name, copy the generated token (format `ptr_…`)
 
 ---
 
-## Structure du projet
+## Project structure
 
 ```
 portainer-manager/
-├── server.js              # Backend Express (API, proxy Portainer, auth OIDC, webhook, uptime)
+├── server.js              # Express backend (API, Portainer proxy, OIDC auth, webhook, uptime)
 ├── package.json
 ├── Dockerfile
 ├── docker-compose.yml
 ├── LICENSE                # GPL-3.0
 ├── CHANGELOG.md
-├── .env                   # Variables d'environnement (ne pas committer)
+├── README.fr.md           # French version of this file
+├── .env                   # Environment variables (do not commit)
 ├── screenshots/
 ├── data/
-│   ├── instances.json     # Instances sauvegardées, tokens chiffrés (créé automatiquement)
-│   ├── config.json        # Config webhook, filtre environnements, rétention uptime (créé automatiquement)
-│   ├── uptime.json        # Historique uptime (créé automatiquement)
-│   ├── audit.log          # Journal d'audit, JSONL append-only (créé automatiquement)
-│   └── sessions/          # Sessions persistées sur disque (créé automatiquement)
+│   ├── instances.json     # Saved instances, encrypted tokens (created automatically)
+│   ├── config.json        # Webhook config, environment filter, uptime retention (created automatically)
+│   ├── uptime.json        # Uptime history (created automatically)
+│   ├── audit.log          # Audit log, append-only JSONL (created automatically)
+│   └── sessions/          # Sessions persisted to disk (created automatically)
 └── public/
-    ├── index.html         # Dashboard principal
-    ├── login.html         # Page de connexion
-    ├── status.html        # Page de statut publique (sans authentification)
+    ├── index.html         # Main dashboard
+    ├── login.html         # Login page
+    ├── status.html        # Public status page (no authentication)
     ├── style.css
     └── app.js
 ```
 
 ---
 
-## API REST
+## REST API
 
 ### Auth
-| Méthode | Route                  | Description                      |
-|---------|------------------------|----------------------------------|
-| POST    | `/api/auth/login`      | Connexion locale `{password}`    |
-| POST    | `/api/auth/logout`     | Déconnexion                      |
-| GET     | `/api/auth/me`         | Utilisateur connecté (`{username, method, role}` ou `null`) |
-| GET     | `/api/auth/methods`    | Méthodes de connexion disponibles (`{local, oidc, oidcLabel}`) |
-| GET     | `/auth/oidc/login`     | Redirige vers le fournisseur OIDC |
-| GET     | `/auth/oidc/callback`  | Callback OIDC (échange du code, création de session) |
+| Method | Route                  | Description                      |
+|--------|-------------------------|-----------------------------------|
+| POST   | `/api/auth/login`       | Local login `{password}`         |
+| POST   | `/api/auth/logout`      | Log out                          |
+| GET    | `/api/auth/me`          | Current user (`{username, method, role}` or `null`) |
+| GET    | `/api/auth/methods`     | Available login methods (`{local, oidc, oidcLabel}`) |
+| GET    | `/auth/oidc/login`      | Redirects to the OIDC provider   |
+| GET    | `/auth/oidc/callback`   | OIDC callback (code exchange, session creation) |
 
 ### Instances (admin)
-| Méthode | Route                        | Description                                        |
-|---------|------------------------------|----------------------------------------------------|
-| GET     | `/api/instances`             | Liste toutes les instances (sans token) — admin et viewer |
-| POST    | `/api/instances`             | Ajouter `{name, url, token, environment, notes}`   |
-| PUT     | `/api/instances/:id`         | Modifier `{name, url, token, environment, notes}`  |
-| DELETE  | `/api/instances/:id`         | Supprimer une instance                             |
-| GET     | `/api/instances/:id/data`    | Données live depuis l'API Portainer — admin et viewer |
+| Method | Route                         | Description                                         |
+|--------|--------------------------------|-------------------------------------------------------|
+| GET    | `/api/instances`              | List all instances (without tokens) — admin and viewer |
+| POST   | `/api/instances`              | Add `{name, url, token, environment, notes}`        |
+| PUT    | `/api/instances/:id`          | Edit `{name, url, token, environment, notes}`       |
+| DELETE | `/api/instances/:id`          | Delete an instance                                   |
+| GET    | `/api/instances/:id/data`     | Live data from the Portainer API — admin and viewer |
 
-### Divers
-| Méthode | Route                          | Description                            |
-|---------|--------------------------------|----------------------------------------|
-| GET     | `/api/uptime`                  | Historique uptime par instance — admin et viewer |
-| GET     | `/api/config`                  | Configuration (webhook, filtre environnements, rétention uptime) — admin |
-| PUT     | `/api/config`                  | Modifier la configuration — admin      |
-| POST    | `/api/config/test-webhook`     | Tester un webhook — admin              |
-| GET     | `/api/portainer/latest-version`| Dernière version CE (cache 1h)         |
-| GET     | `/api/app/version`             | Version de l'app et dernière version disponible sur GitHub (`{current, latest}`, cache 1h) |
-| GET     | `/api/backup/export`           | Exporter la configuration complète (JSON) — admin |
-| POST    | `/api/backup/import`           | Importer une sauvegarde (upsert par id/URL) — admin |
-| GET     | `/api/audit`                   | 200 dernières entrées du journal d'audit — admin |
-| GET     | `/status`                      | Page de statut publique, sans authentification |
-| GET     | `/api/status/public`           | Compteurs agrégés `{total, online, offline, unknown}`, sans authentification |
-| GET     | `/metrics`                     | Métriques Prometheus — session ou `METRICS_TOKEN`, voir [Endpoint Prometheus](#endpoint-prometheus) |
-| GET     | `/api/search`                  | Recherche de conteneurs/stacks par nom à travers toutes les instances (`?q=`) — admin et viewer |
-
----
-
-## Sauvegarde et restauration
-
-Le bouton **⚙️ Paramètres → Sauvegarde** exporte un fichier JSON contenant toutes les instances (avec leurs tokens **chiffrés**, pas en clair) et les réglages (webhook, filtre environnements, rétention uptime).
-
-- **Export** : `GET /api/backup/export`, déclenche le téléchargement d'un fichier `portainer-manager-backup-AAAA-MM-JJ.json`.
-- **Import** : `POST /api/backup/import` avec le même format. Les instances sont **fusionnées** par `id` puis par `url` (mise à jour si une correspondance existe, création sinon) — rien n'est supprimé automatiquement. Un token déjà présent est réutilisé si le fichier importé n'en fournit pas.
-
-> ⚠️ Les tokens restent **chiffrés** dans le fichier exporté (AES-256-GCM), mais ce fichier doit être traité comme un secret : il ne redevient lisible qu'avec le `SESSION_SECRET` de l'instance qui l'a généré, mais autant le stocker comme n'importe quel export de credentials.
-
-### Restaurer sur une autre machine
-
-Pour migrer vers une nouvelle installation (nouveau serveur, deuxième PC...), **copiez le `SESSION_SECRET` de l'installation d'origine dans le `.env` de la nouvelle** avant d'importer la sauvegarde. Sans ça, les instances apparaîtront bien dans le tableau (les métadonnées ne sont pas chiffrées), mais chaque token restera indéchiffrable — carte "Hors ligne" avec l'erreur `Token illisible (SESSION_SECRET incorrect)`, et une ligne `[crypto] Token illisible pour "…"` dans les logs.
-
-Si ça arrive après coup : pas besoin de tout réimporter, il suffit de corriger `SESSION_SECRET` dans le `.env` de la nouvelle machine puis de redémarrer le conteneur (`docker compose up -d`) — les tokens déjà importés redeviennent lisibles immédiatement, la clé de chiffrement étant la seule chose qui manquait.
+### Misc
+| Method | Route                           | Description                             |
+|--------|-----------------------------------|--------------------------------------------|
+| GET    | `/api/uptime`                    | Uptime history per instance — admin and viewer |
+| GET    | `/api/config`                    | Configuration (webhook, environment filter, uptime retention) — admin |
+| PUT    | `/api/config`                    | Update the configuration — admin        |
+| POST   | `/api/config/test-webhook`       | Test a webhook — admin                  |
+| GET    | `/api/portainer/latest-version`  | Latest CE version (1h cache)             |
+| GET    | `/api/app/version`               | App version and latest version available on GitHub (`{current, latest}`, 1h cache) |
+| GET    | `/api/backup/export`             | Export the full configuration (JSON) — admin |
+| POST   | `/api/backup/import`             | Import a backup (upsert by id/URL) — admin |
+| GET    | `/api/audit`                     | Last 200 audit log entries — admin      |
+| GET    | `/status`                        | Public status page, no authentication   |
+| GET    | `/api/status/public`             | Aggregate counts `{total, online, offline, unknown}`, no authentication |
+| GET    | `/metrics`                       | Prometheus metrics — session or `METRICS_TOKEN`, see [Prometheus endpoint](#prometheus-endpoint) |
+| GET    | `/api/search`                    | Search containers/stacks by name across every instance (`?q=`) — admin and viewer |
 
 ---
 
-## Licence
+## Backup and restore
+
+The **⚙️ Settings → Backup** button exports a JSON file containing every instance (with **encrypted** tokens, not plaintext) and the settings (webhook, environment filter, uptime retention).
+
+- **Export**: `GET /api/backup/export`, triggers the download of a `portainer-manager-backup-YYYY-MM-DD.json` file.
+- **Import**: `POST /api/backup/import` with the same format. Instances are **merged** by `id` then by `url` (updated if a match exists, created otherwise) — nothing is deleted automatically. An existing token is reused if the imported file doesn't provide one.
+
+> ⚠️ Tokens stay **encrypted** in the exported file (AES-256-GCM), but the file should still be treated as a secret: it only becomes readable again with the `SESSION_SECRET` of the instance that generated it, but it's still worth storing like any other credentials export.
+
+### Restoring on another machine
+
+To migrate to a new install (new server, second PC...), **copy the original install's `SESSION_SECRET` into the new one's `.env`** before importing the backup. Otherwise, instances will show up fine in the table (metadata isn't encrypted), but every token will stay undecryptable — an "Offline" card with the error `Token illisible (SESSION_SECRET incorrect)`, and a `[crypto] Token illisible pour "…"` line in the logs.
+
+If this happens after the fact: no need to re-import anything, just fix `SESSION_SECRET` in the new machine's `.env` and restart the container (`docker compose up -d`) — already-imported tokens become readable again immediately, since the encryption key was the only thing missing.
+
+---
+
+## License
 
 [GPL-3.0](LICENSE)
