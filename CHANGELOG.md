@@ -4,6 +4,18 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 
 Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/), le projet respecte le [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [1.2.3] - 2026-10-04
+
+### Sécurité
+- Correction de la vulnérabilité `brace-expansion` (dépendance transitive) via mise à jour des dépendances.
+
+### Modifié
+- `dotenv` 17.4.2 → 18.0.5
+- `openid-client` 6.8.7 → 6.8.8
+
+### Note
+- La chaîne de dépendances `nodemon` → `chokidar` → `braces` présente encore une vulnérabilité signalée par `npm audit`, mais `nodemon` est une dépendance de développement uniquement (le `Dockerfile` utilise `npm ci --omit=dev`), donc elle n'atteint jamais l'image de production. Aucun correctif sûr n'existe à ce jour sans forcer une régression majeure de `nodemon` (1.14.10) ; risque accepté et documenté.
+
 ## [1.2.2] - 2026-09-03
 
 ### Corrigé
