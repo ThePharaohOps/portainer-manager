@@ -4,6 +4,24 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 
 Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/), le projet respecte le [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [1.3.0] - 2026-10-29
+
+### Modifié
+- Refonte visuelle de l'interface : tuiles de statistiques avec icônes, barre de filtres en contrôle segmenté, cartes plus lisibles (métriques regroupées, pied de carte aligné, liseré de statut), en-tête regroupé avec pastille utilisateur, modales et pages de connexion/statut modernisées.
+- Mise en page responsive revue : l'en-tête et la barre d'outils passent à la ligne sur mobile (la page débordait horizontalement), stats en 3 puis 2 colonnes.
+- Vue liste plus compacte (badges de version sur une même ligne).
+- Captures d'écran du README mises à jour.
+- `axios` 1.20.0 → 1.21.0, `dotenv` 18.0.5 → 18.0.9, `express` 5.2.1 → 5.3.0, `uuid` 14.0.2 → 14.0.3
+
+### Corrigé
+- Libellés des métriques qui débordaient de leur case sur les cartes.
+- Cases à cocher des paramètres webhook déformées par le style des champs texte, et bouton « Tester le webhook » étiré sur toute la largeur.
+- Contour de focus clavier visible sur les boutons et liens (accessibilité).
+
+### Sécurité
+- Échappement HTML des noms et notes d'instance (vue liste, alertes), du nom d'utilisateur SSO et des entrées du journal d'audit : un nom contenant du HTML pouvait s'exécuter dans le navigateur d'un administrateur.
+- Correction de vulnérabilités dans les dépendances transitives (`proxy-addr` critique, `follow-redirects` et `body-parser` hautes, `qs` modérée). `npm audit` : 0 vulnérabilité.
+
 ## [1.2.3] - 2026-10-04
 
 ### Sécurité

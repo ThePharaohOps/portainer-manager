@@ -218,7 +218,7 @@ function renderList() {
 
     let portainerVer = '—';
     if (d?.version) {
-      const versionBadge = `<span class="version-badge portainer-badge" style="display:inline-flex"><img src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/portainer.png" width="12" height="12" style="display:block" /> v${d.version}</span>`;
+      const versionBadge = `<span class="version-badge portainer-badge" style="display:inline-flex"><img class="vb-logo" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/portainer.png" width="12" height="12" alt="" /> v${escapeHtml(d.version)}</span>`;
       let updateBadgeHtml = '';
       let showUpdateBtn = false;
       if (state.latestVersion) {
@@ -227,19 +227,19 @@ function renderList() {
         updateBadgeHtml = `<span class="update-badge ${outdated ? 'outdated' : 'up-to-date'}" title="${updateTitle}">${outdated ? `v${state.latestVersion} disponible` : 'À jour'}</span>`;
         showUpdateBtn = outdated;
       }
-      portainerVer = `<div style="display:flex;flex-direction:column;gap:3px;align-items:flex-start">${versionBadge}${updateBadgeHtml}${showUpdateBtn ? `<button type="button" class="update-btn list-update-btn">Mettre à jour</button>` : ''}</div>`;
+      portainerVer = `<div class="list-versions">${versionBadge}${updateBadgeHtml}${showUpdateBtn ? `<button type="button" class="update-btn list-update-btn">Mettre à jour</button>` : ''}</div>`;
     }
 
     const dockerVer = d?.dockerVersion
-      ? `<span style="font-size:12px;color:#60b8f5;font-variant-numeric:tabular-nums">v${d.dockerVersion}</span>` : '—';
+      ? `<span class="list-docker">v${escapeHtml(d.dockerVersion)}</span>` : '—';
 
     const uptimeDots = up?.history
       ? up.history.map(u => `<span class="list-uptime-dot ${u ? 'up' : 'down'}"></span>`).join('')
       : '';
     const uptimeHtml = up
-      ? `<div style="display:flex;align-items:center;gap:6px">
+      ? `<div class="list-uptime">
            <div class="list-uptime-bar">${uptimeDots}</div>
-           <span style="font-size:11px;font-weight:700;color:var(--text-dim)">${up.percent}%</span>
+           <span class="list-uptime-percent">${up.percent}%</span>
          </div>`
       : '<span style="color:var(--text-muted);font-size:12px">—</span>';
 
@@ -247,8 +247,8 @@ function renderList() {
       <td class="admin-only"><input type="checkbox" class="row-select" ${state.selected.has(inst.id) ? 'checked' : ''} /></td>
       <td><span class="list-status-dot ${statusClass}"></span></td>
       <td>
-        <div class="list-name">${inst.name}</div>
-        ${inst.notes ? `<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-top:2px">${inst.notes}</div>` : ''}
+        <div class="list-name">${escapeHtml(inst.name)}</div>
+        ${inst.notes ? `<div class="list-notes">${escapeHtml(inst.notes)}</div>` : ''}
       </td>
       <td>${envHtml}</td>
       <td>${portainerVer}</td>
@@ -460,8 +460,8 @@ function updateAlertBell() {
     li.innerHTML = `
       <span class="alert-item-rank rank-${idx + 1}">${idx + 1}</span>
       <div class="alert-item-info">
-        <div class="alert-item-name">${inst.name}</div>
-        <div class="alert-item-versions">v${version} → <strong>v${state.latestVersion}</strong></div>
+        <div class="alert-item-name">${escapeHtml(inst.name)}</div>
+        <div class="alert-item-versions">v${escapeHtml(version)} → <strong>v${escapeHtml(state.latestVersion)}</strong></div>
       </div>${envHtml}`;
     list.appendChild(li);
   });
@@ -776,9 +776,9 @@ async function openAuditLog() {
     list.innerHTML = entries.map(e => `
       <li class="audit-item">
         <span class="audit-ts">${new Date(e.ts).toLocaleString('fr-FR')}</span>
-        <span class="audit-user">${e.user}</span>
-        <span class="audit-action">${AUDIT_LABELS[e.action] || e.action}</span>
-        ${e.target ? `<span class="audit-target">${e.target}</span>` : ''}
+        <span class="audit-user">${escapeHtml(e.user)}</span>
+        <span class="audit-action">${escapeHtml(AUDIT_LABELS[e.action] || e.action)}</span>
+        ${e.target ? `<span class="audit-target">${escapeHtml(e.target)}</span>` : ''}
       </li>
     `).join('');
   } catch (e) {
@@ -1057,8 +1057,11 @@ async function loadCurrentUser() {
     const user = await apiFetch('/api/auth/me');
     if (user?.username) {
       const el = $('currentUser');
-      const roleTag = user.role === 'viewer' ? ' — lecture seule' : '';
-      el.innerHTML = `Connecté en tant que <strong>${user.username}</strong>${user.method === 'oidc' ? ' (SSO)' : ''}${roleTag}`;
+      const name = escapeHtml(user.username);
+      const tags = [user.method === 'oidc' ? 'SSO' : '', user.role === 'viewer' ? 'lecture seule' : ''].filter(Boolean).join(' · ');
+      el.title = `Connecté en tant que ${user.username}`;
+      el.innerHTML = `<span class="user-avatar">${escapeHtml(user.username.charAt(0).toUpperCase())}</span>
+        <span class="user-text"><strong>${name}</strong>${tags ? `<span class="user-tags">${tags}</span>` : ''}</span>`;
       el.style.display = '';
     }
     state.isViewer = user?.role === 'viewer';

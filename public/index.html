@@ -44,6 +44,7 @@
         </div>
       </div>
 
+      <div class="icon-group">
       <!-- Global search -->
       <button class="icon-btn" id="searchOpenBtn" title="Recherche globale (conteneurs, stacks)">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -55,22 +56,23 @@
       </button>
 
       <!-- Settings -->
-      <button class="icon-btn admin-only" id="settingsBtn" title="Paramètres webhook">
+      <button class="icon-btn admin-only" id="settingsBtn" title="Paramètres">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
+      </div>
 
       <!-- Current user -->
       <span class="current-user" id="currentUser" style="display:none"></span>
 
       <!-- Logout -->
-      <button class="btn btn-ghost btn-sm" id="logoutBtn">
+      <button class="btn btn-ghost btn-sm" id="logoutBtn" title="Déconnexion">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        Déconnexion
+        <span class="btn-label">Déconnexion</span>
       </button>
 
       <button class="btn btn-primary admin-only" id="addBtn">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Ajouter
+        <span class="btn-label">Ajouter</span>
       </button>
     </div>
   </div>
@@ -78,17 +80,30 @@
 
 <!-- ── Stats Bar ────────────────────────────────────────────────────────────── -->
 <div class="stats-bar">
-  <div class="stat-item"><span class="stat-value" id="statTotal">—</span><span class="stat-label">Instances</span></div>
-  <div class="stat-divider"></div>
-  <div class="stat-item"><span class="stat-value online" id="statOnline">—</span><span class="stat-label">En ligne</span></div>
-  <div class="stat-divider"></div>
-  <div class="stat-item"><span class="stat-value offline" id="statOffline">—</span><span class="stat-label">Hors ligne</span></div>
-  <div class="stat-divider"></div>
-  <div class="stat-item"><span class="stat-value" id="statContainers">—</span><span class="stat-label">Conteneurs</span></div>
-  <div class="stat-divider"></div>
-  <div class="stat-item"><span class="stat-value" id="statStacks">—</span><span class="stat-label">Stacks</span></div>
-  <div class="stat-divider"></div>
-  <div class="stat-item"><span class="stat-value stat-version" id="statLatestVersion">—</span><span class="stat-label">Dernière CE</span></div>
+  <div class="stat-item">
+    <span class="stat-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><line x1="6" y1="6.5" x2="6.01" y2="6.5"/><line x1="6" y1="17.5" x2="6.01" y2="17.5"/></svg></span>
+    <span class="stat-label">Instances</span><span class="stat-value" id="statTotal">—</span>
+  </div>
+  <div class="stat-item stat-online">
+    <span class="stat-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>
+    <span class="stat-label">En ligne</span><span class="stat-value online" id="statOnline">—</span>
+  </div>
+  <div class="stat-item stat-offline">
+    <span class="stat-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
+    <span class="stat-label">Hors ligne</span><span class="stat-value offline" id="statOffline">—</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span>
+    <span class="stat-label">Conteneurs</span><span class="stat-value" id="statContainers">—</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></span>
+    <span class="stat-label">Stacks</span><span class="stat-value" id="statStacks">—</span>
+  </div>
+  <div class="stat-item stat-latest">
+    <span class="stat-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></span>
+    <span class="stat-label">Dernière CE</span><span class="stat-value stat-version" id="statLatestVersion">—</span>
+  </div>
 </div>
 
 <!-- ── Toolbar ──────────────────────────────────────────────────────────────── -->
@@ -428,11 +443,11 @@
     <div class="card-notes" style="display:none"></div>
 
     <div class="card-metrics">
-      <div class="metric"><span class="metric-value env-count">—</span><span class="metric-label">Environnements</span></div>
-      <div class="metric"><span class="metric-value running-count">—</span><span class="metric-label">Conteneurs actifs</span></div>
-      <div class="metric"><span class="metric-value stopped-count">—</span><span class="metric-label">Conteneurs arrêtés</span></div>
-      <div class="metric"><span class="metric-value stacks-count">—</span><span class="metric-label">Stacks</span></div>
-      <div class="metric services-metric" style="display:none"><span class="metric-value services-count">—</span><span class="metric-label">Services Swarm</span></div>
+      <div class="metric" title="Environnements"><span class="metric-value env-count">—</span><span class="metric-label">Envs</span></div>
+      <div class="metric" title="Conteneurs actifs"><span class="metric-value running-count">—</span><span class="metric-label">Actifs</span></div>
+      <div class="metric" title="Conteneurs arrêtés"><span class="metric-value stopped-count">—</span><span class="metric-label">Arrêtés</span></div>
+      <div class="metric" title="Stacks"><span class="metric-value stacks-count">—</span><span class="metric-label">Stacks</span></div>
+      <div class="metric services-metric" title="Services Swarm" style="display:none"><span class="metric-value services-count">—</span><span class="metric-label">Services</span></div>
     </div>
 
     <div class="uptime-row" style="display:none">
