@@ -3,10 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Portainer Manager — Statut</title>
+  <title data-i18n="status.pageTitle">Portainer Manager — Statut</title>
   <link rel="stylesheet" href="style.css" />
+  <script src="theme.js"></script>
+  <script src="i18n.js"></script>
 </head>
 <body class="login-body">
+  <div class="prefs-corner">
+    <button type="button" class="icon-btn theme-btn" id="themeToggle">
+      <svg class="theme-icon theme-icon-dark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      <svg class="theme-icon theme-icon-light" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      <svg class="theme-icon theme-icon-system" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+    </button>
+    <button type="button" class="icon-btn lang-btn" id="langToggle" data-i18n-title="lang.switchTo" data-i18n-aria-label="lang.switchTo"><span data-i18n="lang.switchCode">EN</span></button>
+  </div>
+
   <div class="login-card status-card">
     <div class="login-logo">
       <svg width="38" height="38" viewBox="0 0 32 32" fill="none">
@@ -15,44 +26,28 @@
       </svg>
       <div>
         <div class="login-title">Portainer Manager</div>
-        <div class="login-subtitle">Statut public</div>
+        <div class="login-subtitle" data-i18n="status.subtitle">Statut public</div>
       </div>
     </div>
 
     <div class="status-grid">
       <div class="status-tile">
         <span class="status-tile-value" id="statTotal">—</span>
-        <span class="status-tile-label">Instances</span>
+        <span class="status-tile-label" data-i18n="stats.instances">Instances</span>
       </div>
       <div class="status-tile online">
         <span class="status-tile-value" id="statOnline">—</span>
-        <span class="status-tile-label">En ligne</span>
+        <span class="status-tile-label" data-i18n="common.online">En ligne</span>
       </div>
       <div class="status-tile offline">
         <span class="status-tile-value" id="statOffline">—</span>
-        <span class="status-tile-label">Hors ligne</span>
+        <span class="status-tile-label" data-i18n="common.offline">Hors ligne</span>
       </div>
     </div>
 
-    <p class="status-updated" id="statUpdated">Chargement…</p>
+    <p class="status-updated" id="statUpdated" data-i18n="common.loading">Chargement…</p>
   </div>
 
-  <script>
-    async function refresh() {
-      try {
-        const res = await fetch('/api/status/public');
-        const d = await res.json();
-        document.getElementById('statTotal').textContent = d.total;
-        document.getElementById('statOnline').textContent = d.online;
-        document.getElementById('statOffline').textContent = d.offline;
-        const date = new Date(d.updatedAt);
-        document.getElementById('statUpdated').textContent = 'Mis à jour à ' + date.toLocaleTimeString('fr-FR');
-      } catch {
-        document.getElementById('statUpdated').textContent = 'Impossible de récupérer le statut';
-      }
-    }
-    refresh();
-    setInterval(refresh, 30000);
-  </script>
+  <script src="status.js"></script>
 </body>
 </html>

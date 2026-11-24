@@ -1,6 +1,7 @@
 # Portainer Manager
 
 [![Version](https://img.shields.io/github/v/tag/ThePharaohOps/portainer-manager?label=version&sort=semver)](https://github.com/ThePharaohOps/portainer-manager/tags)
+[![CI](https://github.com/ThePharaohOps/portainer-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/ThePharaohOps/portainer-manager/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-24--alpine-339933?logo=node.js&logoColor=white)](Dockerfile)
 
@@ -8,30 +9,35 @@
 
 Dashboard web sécurisé pour gérer plusieurs instances Portainer depuis une interface unique.
 
+L'interface est disponible en **français et en anglais** (choisie selon la langue du navigateur, modifiable avec le bouton FR/EN), avec un thème **sombre, clair ou automatique**.
+
 ## Aperçu
 
 > Noms et URLs anonymisés dans ces captures — l'interface réelle affiche vos propres instances.
 
 **Vue grille**
-![Vue grille](screenshots/dashboard-grid.png)
+![Vue grille](screenshots/fr/dashboard-grid.png)
+
+**Thème clair**
+![Thème clair](screenshots/fr/dashboard-light.png)
 
 **Vue liste**
-![Vue liste](screenshots/dashboard-list.png)
+![Vue liste](screenshots/fr/dashboard-list.png)
 
 **Guide de mise à jour**
-![Guide de mise à jour](screenshots/update-guide-modal.png)
+![Guide de mise à jour](screenshots/fr/update-guide-modal.png)
 
 **Paramètres**
-![Paramètres](screenshots/settings-modal.png)
+![Paramètres](screenshots/fr/settings-modal.png)
 
 **Journal d'audit**
-![Journal d'audit](screenshots/audit-log-modal.png)
+![Journal d'audit](screenshots/fr/audit-log-modal.png)
 
 **Actions groupées**
-![Actions groupées](screenshots/bulk-toolbar.png)
+![Actions groupées](screenshots/fr/bulk-toolbar.png)
 
 **Connexion**
-![Page de connexion](screenshots/login.png)
+![Page de connexion](screenshots/fr/login.png)
 
 ## Fonctionnalités
 
@@ -58,13 +64,18 @@ Dashboard web sécurisé pour gérer plusieurs instances Portainer depuis une in
 
 ### Vues et navigation
 - **Vue grille** (défaut) ou **vue liste** (tableau dense)
-- **Groupement par environnement** : sections Production / Preprod / Recette / Intégration
+- **Groupement par environnement** : sections Production / Pré-production / Recette / Intégration
 - **Tri** : par nom, environnement, statut, version, date d'ajout
 - **Recherche** par nom ou URL
 - **Recherche globale** (icône 🔍) : cherche un conteneur ou une stack par son nom **à travers toutes les instances**, résultats groupés par instance avec lien direct vers Portainer — voir [Recherche globale](#recherche-globale)
 - **Filtre** : Toutes / En ligne / Hors ligne / Mises à jour disponibles
 - **Export CSV** de l'état complet du parc
 - **Actions groupées** (admin) : sélectionner plusieurs instances pour changer leur environnement en masse ou exporter uniquement la sélection en CSV
+
+### Langue et thème
+- Interface **français / anglais** : détectée selon la langue du navigateur à la première visite, puis modifiable à tout moment avec le bouton **FR/EN** (en-tête et page de connexion). Le choix est mémorisé par navigateur
+- Thème **sombre** (par défaut), **clair** ou **automatique** (suit le système d'exploitation), via le bouton soleil/lune
+- Les exports CSV, les dates et le journal d'audit suivent la langue choisie
 
 ### Rôles et audit
 - **Rôle lecture seule (viewer)** optionnel via un claim/groupe OIDC : masque Ajouter/Modifier/Supprimer, Paramètres, Audit et les actions groupées — voir [Rôles admin/viewer (OIDC)](#rôles-adminviewer-oidc)
@@ -76,6 +87,7 @@ Dashboard web sécurisé pour gérer plusieurs instances Portainer depuis une in
 - Notification automatique quand une instance change de statut (online ↔ offline)
 - Support : **Slack**, **Microsoft Teams**, **Generic JSON**
 - **Filtre par environnement** : notifier uniquement Production, par exemple (aucune coche = tous)
+- **Langue des notifications** : français (par défaut) ou anglais
 - Bouton "Tester" dans les paramètres
 
 ### Paramètres (bouton ⚙️)
@@ -87,6 +99,9 @@ Dashboard web sécurisé pour gérer plusieurs instances Portainer depuis une in
 
 ### Sécurité
 - **Authentification** par mot de passe partagé, avec session 8h persistée sur disque (`data/sessions/`) : un redémarrage du conteneur ne déconnecte pas les sessions actives
+- **Protection contre le brute-force** : après 10 échecs de mot de passe (`LOGIN_MAX_ATTEMPTS`) depuis une même IP, la connexion par mot de passe est bloquée 15 minutes pour cette IP (le SSO reste disponible). Les échecs et blocages apparaissent dans le journal d'audit avec l'IP du client
+- **Sessions durcies** : nouvel identifiant de session à chaque connexion (pas de fixation de session), cookie `HttpOnly` + `SameSite=Lax` (`Secure` automatiquement en HTTPS), comparaison du mot de passe en temps constant
+- **En-têtes de sécurité** : Content-Security-Policy stricte (aucun script inline), `X-Frame-Options: DENY` (pas de clickjacking), `X-Content-Type-Options: nosniff`, `Referrer-Policy`
 - **SSO / OIDC** optionnel (Azure AD/Entra ID, Okta, Keycloak, Google Workspace, Authentik...) : se superpose au mot de passe local, qui reste toujours disponible en secours — voir [Configurer le SSO (OIDC)](#configurer-le-sso-oidc)
 - **Tokens API chiffrés au repos** (AES-256-GCM, clé dérivée de `SESSION_SECRET`) dans `data/instances.json`
 - Les tokens API ne sont **jamais** transmis au navigateur
@@ -104,7 +119,24 @@ Dashboard web sécurisé pour gérer plusieurs instances Portainer depuis une in
 
 ## Démarrage rapide
 
-### Avec Docker (recommandé)
+### Avec l'image prête à l'emploi (le plus rapide)
+
+Chaque version est publiée sur le GitHub Container Registry pour `linux/amd64` et `linux/arm64` (Raspberry Pi, Apple Silicon...), à partir de la v1.4.0 :
+
+```bash
+docker run -d --name portainer-manager --restart unless-stopped \
+  -p 3000:3000 \
+  -e ADMIN_PASSWORD=a-changer \
+  -e SESSION_SECRET=une-chaine-aleatoire-longue-et-unique \
+  -v portainer-manager-data:/app/data \
+  ghcr.io/thepharaohops/portainer-manager:latest
+```
+
+Générez `SESSION_SECRET` une seule fois (ex. `openssl rand -base64 32`) et conservez-le : il chiffre aussi les tokens API enregistrés. Tags disponibles : `latest`, une version exacte (`1.4.0`) ou une ligne mineure (`1.4`).
+
+Avec Docker Compose, remplacez `build: .` par `image: ghcr.io/thepharaohops/portainer-manager:latest` dans `docker-compose.yml`.
+
+### Construire depuis les sources avec Docker
 
 ```bash
 # Copier et configurer les variables
@@ -120,11 +152,7 @@ npm install
 npm start
 ```
 
-Pour le développement avec rechargement automatique :
-
-```bash
-npm run dev
-```
+En développement, `npm run dev` redémarre le serveur automatiquement à chaque modification (`--watch` intégré à Node, sans dépendance supplémentaire).
 
 L'application est accessible sur **http://localhost:3000** (ou l'IP définie dans `HOST_IP`).
 
@@ -138,6 +166,9 @@ L'application est accessible sur **http://localhost:3000** (ou l'IP définie dan
 | `HOST_IP`        | *(toutes les interfaces)*     | IP affichée au démarrage dans les logs   |
 | `ADMIN_PASSWORD` | `admin`                       | ⚠️ Mot de passe du dashboard — à changer |
 | `SESSION_SECRET` | *(aléatoire à chaque restart)*| Clé de signature des sessions et de chiffrement des tokens API |
+| `TRUST_PROXY`    | *(non défini)*                | `1` derrière un reverse proxy (voir [Mettre l'application derrière un reverse proxy](#mettre-lapplication-derrière-un-reverse-proxy)) |
+| `LOGIN_MAX_ATTEMPTS` | `10`                      | Échecs de mot de passe tolérés par IP avant un blocage de 15 minutes |
+| `DATA_DIR`       | `./data`                      | Dossier des instances, réglages, sessions et du journal d'audit |
 
 > **Important** : sans `SESSION_SECRET` fixe, les sessions sont invalidées **et les tokens API chiffrés deviennent illisibles** à chaque redémarrage.
 
@@ -223,7 +254,7 @@ Le bouton 🔍 dans l'en-tête ouvre une recherche par nom de conteneur ou de st
 - Pour chaque instance, interroge en parallèle la liste des stacks et, pour chaque environnement Docker, la liste des conteneurs (`GET /api/endpoints/{id}/docker/containers/json?all=true` côté Portainer) — les instances injoignables sont simplement ignorées, pas d'erreur bloquante
 - Résultats groupés par instance, avec lien direct pour l'ouvrir dans Portainer
 
-> Contrairement au reste du dashboard, cette recherche n'est **pas** automatique : elle n'est déclenchée qu'à la demande (bouton "Rechercher"), pour éviter de solliciter les 19 instances à chaque frappe ou à chaque cycle d'auto-refresh.
+> Contrairement au reste du dashboard, cette recherche n'est **pas** automatique : elle n'est déclenchée qu'à la demande (bouton "Rechercher"), pour éviter de solliciter toutes les instances à chaque frappe ou à chaque cycle d'auto-refresh.
 
 ---
 
@@ -266,7 +297,7 @@ L'app écoute en HTTP simple sur le port interne défini par `PORT` (3000 par d�
 
 Dans tous les cas :
 - Adaptez `proxy_pass` / `reverse_proxy` au port réellement exposé côté hôte (celui de `ports:` dans `docker-compose.yml`, pas forcément 3000).
-- Le cookie de session n'est pas marqué `Secure`, donc il fonctionne tel quel derrière un proxy qui termine le TLS (le trajet proxy → app reste en HTTP interne). Pas de configuration supplémentaire côté app nécessaire.
+- Définissez **`TRUST_PROXY=1`** (un proxy devant l'app). L'app lit alors la vraie IP du client dans `X-Forwarded-For`. Sans ça, tous les utilisateurs semblent venir de l'IP du proxy : la limite anti brute-force les compterait comme un seul client, et 10 mauvais mots de passe tapés par n'importe qui bloqueraient la connexion par mot de passe pour tout le monde pendant 15 minutes (le SSO continue de fonctionner). Avec `TRUST_PROXY` défini et un proxy qui transmet `X-Forwarded-Proto: https`, le cookie de session est aussi marqué `Secure`.
 - Pensez à garder `SESSION_SECRET` fixe dans `.env` (voir plus haut).
 
 ### Nginx
@@ -351,6 +382,20 @@ Nécessite les modules `proxy` et `proxy_http` (`a2enmod proxy proxy_http` puis 
 
 ---
 
+## Développement et tests
+
+```bash
+npm install
+npm run dev   # redémarrage automatique à chaque modification
+npm test      # tests API, sécurité et traductions (test runner intégré à Node)
+```
+
+Les tests démarrent le vrai serveur dans un dossier de données temporaire, avec une fausse API Portainer : ils ne touchent jamais à votre dossier `data/` ni à votre `.env`. Ils couvrent la connexion, le blocage anti brute-force, les sessions, les en-têtes de sécurité, la gestion des instances et le chiffrement des tokens, les données live, la recherche globale, `/metrics`, et la complétude des traductions français/anglais (chaque clé utilisée dans les pages doit exister dans les deux langues).
+
+GitHub Actions lance les tests, un audit des dépendances de production et un build Docker + healthcheck à chaque push et pull request. Pousser un tag `vX.Y.Z` publie l'image multi-architecture sur GHCR.
+
+---
+
 ## Structure du projet
 
 ```
@@ -363,7 +408,9 @@ portainer-manager/
 ├── CHANGELOG.md
 ├── README.md              # Ce fichier existe aussi en anglais (par défaut) et en français (README.fr.md)
 ├── .env                   # Variables d'environnement (ne pas committer)
-├── screenshots/
+├── .github/workflows/     # CI (tests, audit, build Docker) et publication de l'image
+├── test/                  # Tests automatisés (npm test)
+├── screenshots/           # Captures en anglais (en français dans screenshots/fr/)
 ├── data/
 │   ├── instances.json     # Instances sauvegardées, tokens chiffrés (créé automatiquement)
 │   ├── config.json        # Config webhook, filtre environnements, rétention uptime (créé automatiquement)
@@ -372,8 +419,10 @@ portainer-manager/
 │   └── sessions/          # Sessions persistées sur disque (créé automatiquement)
 └── public/
     ├── index.html         # Dashboard principal
-    ├── login.html         # Page de connexion
-    ├── status.html        # Page de statut publique (sans authentification)
+    ├── login.html         # Page de connexion (+ login.js)
+    ├── status.html        # Page de statut publique, sans authentification (+ status.js)
+    ├── i18n.js            # Traductions français/anglais
+    ├── theme.js           # Thème sombre/clair/automatique
     ├── style.css
     └── app.js
 ```
@@ -381,6 +430,8 @@ portainer-manager/
 ---
 
 ## API REST
+
+Les erreurs sont renvoyées sous la forme `{"error": "<message>", "code": "<code>"}`. Le `code` est stable (ex. `bad_password`, `too_many_attempts`, `duplicate_url`, `not_found`) et c'est lui que l'interface traduit. Une connexion bloquée répond `429` avec un en-tête `Retry-After`.
 
 ### Auth
 | Méthode | Route                  | Description                      |
@@ -405,7 +456,7 @@ portainer-manager/
 | Méthode | Route                          | Description                            |
 |---------|--------------------------------|----------------------------------------|
 | GET     | `/api/uptime`                  | Historique uptime par instance — admin et viewer |
-| GET     | `/api/config`                  | Configuration (webhook, filtre environnements, rétention uptime) — admin |
+| GET     | `/api/config`                  | Configuration (webhook, langue des notifications, filtre environnements, rétention uptime) — admin |
 | PUT     | `/api/config`                  | Modifier la configuration — admin      |
 | POST    | `/api/config/test-webhook`     | Tester un webhook — admin              |
 | GET     | `/api/portainer/latest-version`| Dernière version CE (cache 1h)         |

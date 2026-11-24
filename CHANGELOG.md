@@ -4,6 +4,32 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 
 Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/), le projet respecte le [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [1.4.0] - 2026-11-24
+
+### Ajouté
+- **Interface en anglais** : toute l'application (dashboard, connexion, page de statut, exports CSV, dates, journal d'audit) est disponible en français et en anglais. La langue est détectée selon le navigateur, puis modifiable avec le bouton FR/EN ; le choix est mémorisé.
+- **Thème clair et automatique** en plus du thème sombre (toujours par défaut), via le bouton soleil/lune de l'en-tête et de la page de connexion.
+- **Langue des notifications webhook** (Slack, Teams) : français ou anglais, dans les Paramètres.
+- **Image Docker publiée sur GHCR** (`ghcr.io/thepharaohops/portainer-manager`) pour `linux/amd64` et `linux/arm64`, construite automatiquement à chaque tag de version : l'application se lance avec un simple `docker run`, sans cloner le dépôt.
+- **Tests automatisés** (`npm test`, test runner intégré à Node) : connexion, blocage anti brute-force, sessions, en-têtes de sécurité, gestion des instances, chiffrement des tokens, données live, recherche globale, `/metrics`, complétude des traductions.
+- **Intégration continue** GitHub Actions : tests, audit des dépendances de production et build Docker avec healthcheck à chaque push et pull request.
+- Variables `TRUST_PROXY` (derrière un reverse proxy), `LOGIN_MAX_ATTEMPTS` et `DATA_DIR`.
+
+### Sécurité
+- **Protection contre le brute-force** : après 10 échecs de mot de passe depuis une même IP, la connexion par mot de passe est bloquée 15 minutes pour cette IP (réponse `429` + `Retry-After`). Les échecs et blocages sont inscrits au journal d'audit avec l'IP.
+- **Nouvelle session à chaque connexion** (mot de passe et SSO) : un identifiant de session obtenu avant l'authentification n'est jamais réutilisé (fixation de session).
+- Comparaison du mot de passe et du jeton `/metrics` en temps constant.
+- Cookie de session `SameSite=Lax`, et `Secure` automatiquement en HTTPS.
+- **En-têtes de sécurité** : Content-Security-Policy stricte (les scripts inline des pages de connexion et de statut ont été déplacés dans des fichiers), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, suppression de `X-Powered-By`.
+- Ajout d'un `.dockerignore` : `.env` et `data/` ne sont plus envoyés au moteur de build Docker.
+
+### Modifié
+- `nodemon` remplacé par `node --watch` (intégré à Node) pour `npm run dev` : une dépendance de développement et toute sa chaîne en moins, ce qui supprime aussi la vulnérabilité modérée `minimatch` qu'elle apportait (`npm audit` : 0 vulnérabilité).
+- `axios` 1.21.0 → 1.21.1, `dotenv` 18.0.9 → 18.0.10, `openid-client` 6.8.8 → 6.9.1 (connexion SSO revérifiée de bout en bout derrière un reverse proxy).
+- Les erreurs de l'API renvoient un `code` stable en plus du message (ex. `bad_password`, `duplicate_url`), utilisé par l'interface pour les traduire.
+- Textes d'aide de l'endpoint `/metrics` en anglais (noms des métriques inchangés).
+- Captures d'écran du README en anglais, et en français dans `README.fr.md`.
+
 ## [1.3.0] - 2026-10-29
 
 ### Modifié

@@ -13,13 +13,43 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const APP_VERSION = require('./package.json').version;
 const GITHUB_REPO = 'ThePharaohOps/portainer-manager';
-const DATA_FILE    = path.join(__dirname, 'data', 'instances.json');
-const CONFIG_FILE  = path.join(__dirname, 'data', 'config.json');
-const UPTIME_FILE  = path.join(__dirname, 'data', 'uptime.json');
-const AUDIT_FILE   = path.join(__dirname, 'data', 'audit.log');
-const SESSION_DIR  = path.join(__dirname, 'data', 'sessions');
+const DATA_DIR     = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, 'data');
+const DATA_FILE    = path.join(DATA_DIR, 'instances.json');
+const CONFIG_FILE  = path.join(DATA_DIR, 'config.json');
+const UPTIME_FILE  = path.join(DATA_DIR, 'uptime.json');
+const AUDIT_FILE   = path.join(DATA_DIR, 'audit.log');
+const SESSION_DIR  = path.join(DATA_DIR, 'sessions');
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
 const METRICS_TOKEN = process.env.METRICS_TOKEN || null;
+const LOGIN_MAX_ATTEMPTS = Math.max(parseInt(process.env.LOGIN_MAX_ATTEMPTS, 10) || 10, 1);
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+
+// ── API errors: stable `code` for the UI to translate, French `error` kept for API consumers ──
+const ERROR_MESSAGES = {
+  unauthenticated:   'Non authentifié',
+  admin_only:        'Action réservée aux administrateurs',
+  bad_password:      'Mot de passe incorrect',
+  too_many_attempts: 'Trop de tentatives de connexion, réessayez dans {retryAfter} s',
+  missing_url:       'URL manquante',
+  invalid_backup:    'Format invalide : "instances" doit être un tableau',
+  url_token_required:'url et token requis',
+  duplicate_url:     'Une instance avec cette URL existe déjà',
+  not_found:         'Instance introuvable',
+  query_too_short:   'Requête trop courte (2 caractères minimum)',
+  webhook_failed:    'Échec du webhook : {detail}',
+  session_error:     'Erreur de session, réessayez',
+};
+
+function apiError(res, status, code, vars = {}) {
+  const error = ERROR_MESSAGES[code].replace(/\{(\w+)\}/g, (m, k) => vars[k] ?? m);
+  return res.status(status).json({ error, code, ...vars });
+}
+
+function tokenMatches(input, expected) {
+  const a = crypto.createHash('sha256').update(String(input ?? '')).digest();
+  const b = crypto.createHash('sha256').update(String(expected)).digest();
+  return crypto.timingSafeEqual(a, b);
+}
 
 // ── OIDC config (optional SSO) ────────────────────────────────────────────────
 const OIDC_ISSUER_URL    = process.env.OIDC_ISSUER_URL;
@@ -44,13 +74,41 @@ function determineOidcRole(claims) {
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
+// Behind a reverse proxy, req.ip is the proxy's address unless Express trusts X-Forwarded-For:
+// without it the login rate limit would count every user as one client.
+const TRUST_PROXY = process.env.TRUST_PROXY;
+if (TRUST_PROXY && TRUST_PROXY !== 'false') {
+  app.set('trust proxy', TRUST_PROXY === 'true' ? true : /^\d+$/.test(TRUST_PROXY) ? Number(TRUST_PROXY) : TRUST_PROXY);
+}
+
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'same-origin',
+    'Content-Security-Policy': [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: https://cdn.jsdelivr.net",
+      "connect-src 'self'",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+    ].join('; '),
+  });
+  next();
+});
+
 app.use(express.json());
 app.use(session({
   store: new FileStore({ path: SESSION_DIR, retries: 5, retryInterval: 100, logFn: () => {} }),
   secret: process.env.SESSION_SECRET || 'pm-secret-' + Math.random().toString(36),
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 8 * 60 * 60 * 1000, httpOnly: true },
+  cookie: { maxAge: 8 * 60 * 60 * 1000, httpOnly: true, sameSite: 'lax', secure: 'auto' },
 }));
 
 // ── Auth middleware ───────────────────────────────────────────────────────────
@@ -62,13 +120,52 @@ app.use((req, res, next) => {
   if (req.path === '/status' || req.path === '/api/status/public') return next();
   if (req.path === '/metrics') return next(); // own auth check inside the route (bearer token or session)
   if (req.session?.authenticated) return next();
-  if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Non authentifié' });
+  if (req.path.startsWith('/api/')) return apiError(res, 401, 'unauthenticated');
   res.redirect('/login');
 });
 
 function requireAdmin(req, res, next) {
-  if (req.session?.user?.role === 'viewer') return res.status(403).json({ error: 'Action réservée aux administrateurs' });
+  if (req.session?.user?.role === 'viewer') return apiError(res, 403, 'admin_only');
   next();
+}
+
+// ── Login rate limiting (per client IP, in memory) ────────────────────────────
+const loginAttempts = new Map();
+
+function loginLockRemaining(ip) {
+  const entry = loginAttempts.get(ip);
+  return entry?.lockedUntil > Date.now() ? Math.ceil((entry.lockedUntil - Date.now()) / 1000) : 0;
+}
+
+function recordLoginFailure(ip) {
+  const now = Date.now();
+  let entry = loginAttempts.get(ip);
+  if (!entry || now - entry.firstAt > LOGIN_WINDOW_MS) entry = { count: 0, firstAt: now, lockedUntil: 0 };
+  entry.count++;
+  if (entry.count >= LOGIN_MAX_ATTEMPTS) {
+    entry.lockedUntil = now + LOGIN_WINDOW_MS;
+    entry.count = 0;
+    entry.firstAt = now;
+  }
+  loginAttempts.set(ip, entry);
+  return loginLockRemaining(ip);
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of loginAttempts) {
+    if (entry.lockedUntil < now && now - entry.firstAt > LOGIN_WINDOW_MS) loginAttempts.delete(ip);
+  }
+}, LOGIN_WINDOW_MS).unref();
+
+// Fresh session id on every login, so an id planted before authentication is never promoted.
+function establishSession(req, user, done) {
+  req.session.regenerate(err => {
+    if (err) return done(err);
+    req.session.authenticated = true;
+    req.session.user = user;
+    req.session.save(done);
+  });
 }
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -127,7 +224,7 @@ function migrateTokenEncryption() {
 
 migrateTokenEncryption();
 
-const DEFAULT_CONFIG = { webhookUrl: null, webhookType: 'slack', webhookEnvironments: [], uptimeRetention: 288 };
+const DEFAULT_CONFIG = { webhookUrl: null, webhookType: 'slack', webhookEnvironments: [], webhookLanguage: 'fr', uptimeRetention: 288 };
 
 function loadConfig() {
   try {
@@ -189,6 +286,11 @@ function loadAudit(limit = MAX_AUDIT_ENTRIES_RETURNED) {
 }
 
 // ── Webhook on status change ──────────────────────────────────────────────────
+const WEBHOOK_TEXT = {
+  fr: { locale: 'fr-FR', backOnline: 'est revenue en ligne', wentOffline: 'est passée hors ligne', status: 'Statut', online: 'En ligne', offline: 'Hors ligne', testOk: 'Test de webhook réussi !' },
+  en: { locale: 'en-US', backOnline: 'is back online', wentOffline: 'went offline', status: 'Status', online: 'Online', offline: 'Offline', testOk: 'Webhook test successful!' },
+};
+
 const statusCache = {};
 const liveDataCache = {}; // last known /api/instances/:id/data result per instance, feeds /metrics
 
@@ -197,10 +299,11 @@ async function sendWebhook(id, name, online, url, environment) {
   if (!config.webhookUrl) return;
   if (config.webhookEnvironments?.length && !config.webhookEnvironments.includes(environment)) return;
 
+  const w = WEBHOOK_TEXT[config.webhookLanguage] || WEBHOOK_TEXT.fr;
   const emoji = online ? '🟢' : '🔴';
-  const statusText = online ? 'est revenue en ligne' : 'est passée hors ligne';
+  const statusText = online ? w.backOnline : w.wentOffline;
   const envText = environment ? ` [${environment.toUpperCase()}]` : '';
-  const ts = new Date().toLocaleString('fr-FR');
+  const ts = new Date().toLocaleString(w.locale);
 
   let payload;
 
@@ -225,12 +328,12 @@ async function sendWebhook(id, name, online, url, environment) {
       '@type': 'MessageCard',
       '@context': 'http://schema.org/extensions',
       themeColor: online ? '22c55e' : 'ef4444',
-      summary: `${name} ${online ? 'en ligne' : 'hors ligne'}`,
+      summary: `${name} ${online ? w.online.toLowerCase() : w.offline.toLowerCase()}`,
       sections: [{
         activityTitle: `${emoji} ${name}${envText}`,
         activitySubtitle: `Portainer Manager — ${ts}`,
         facts: [
-          { name: 'Statut', value: online ? 'En ligne' : 'Hors ligne' },
+          { name: w.status, value: online ? w.online : w.offline },
           { name: 'URL', value: url },
         ],
       }],
@@ -317,14 +420,29 @@ app.get('/login', (req, res) => {
 });
 
 app.post('/api/auth/login', (req, res) => {
-  if (req.body.password === ADMIN_PASSWORD) {
-    req.session.authenticated = true;
-    req.session.user = { username: 'admin', method: 'local', role: 'admin' };
-    logAudit('admin', 'auth:login', 'local');
-    return res.json({ success: true });
+  const locked = loginLockRemaining(req.ip);
+  if (locked) {
+    res.set('Retry-After', String(locked));
+    return apiError(res, 429, 'too_many_attempts', { retryAfter: locked });
   }
-  logAudit('anonyme', 'auth:login_failed', 'local');
-  res.status(401).json({ error: 'Mot de passe incorrect' });
+
+  if (tokenMatches(req.body?.password, ADMIN_PASSWORD)) {
+    loginAttempts.delete(req.ip);
+    return establishSession(req, { username: 'admin', method: 'local', role: 'admin' }, err => {
+      if (err) return apiError(res, 500, 'session_error');
+      logAudit('admin', 'auth:login', 'local');
+      res.json({ success: true });
+    });
+  }
+
+  const lockedNow = recordLoginFailure(req.ip);
+  logAudit('anonyme', 'auth:login_failed', `local · ${req.ip}`);
+  if (lockedNow) {
+    logAudit('anonyme', 'auth:login_locked', `${req.ip} · ${Math.round(lockedNow / 60)} min`);
+    res.set('Retry-After', String(lockedNow));
+    return apiError(res, 429, 'too_many_attempts', { retryAfter: lockedNow });
+  }
+  apiError(res, 401, 'bad_password');
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -378,12 +496,15 @@ app.get('/auth/oidc/callback', async (req, res) => {
       expectedState: req.session.oidc.state,
     });
     const claims = tokens.claims();
-    delete req.session.oidc;
-    req.session.authenticated = true;
     const username = claims?.email || claims?.preferred_username || claims?.name || claims?.sub || 'utilisateur SSO';
-    req.session.user = { username, method: 'oidc', role: determineOidcRole(claims) };
-    logAudit(username, 'auth:login', 'oidc');
-    res.redirect('/');
+    establishSession(req, { username, method: 'oidc', role: determineOidcRole(claims) }, err => {
+      if (err) {
+        console.error('[oidc] Échec de création de session:', err.message);
+        return res.redirect('/login?error=oidc');
+      }
+      logAudit(username, 'auth:login', 'oidc');
+      res.redirect('/');
+    });
   } catch (e) {
     logOidcError('[oidc] Échec de connexion:', e);
     res.redirect('/login?error=oidc');
@@ -401,6 +522,7 @@ app.put('/api/config', requireAdmin, (req, res) => {
     webhookEnvironments: Array.isArray(req.body.webhookEnvironments)
       ? req.body.webhookEnvironments.filter(e => VALID_ENVS.includes(e))
       : [],
+    webhookLanguage: WEBHOOK_TEXT[req.body.webhookLanguage] ? req.body.webhookLanguage : DEFAULT_CONFIG.webhookLanguage,
     uptimeRetention: Number.isFinite(retention) ? Math.min(Math.max(retention, 10), 5000) : DEFAULT_CONFIG.uptimeRetention,
   };
   saveConfig(config);
@@ -409,14 +531,15 @@ app.put('/api/config', requireAdmin, (req, res) => {
 });
 
 app.post('/api/config/test-webhook', requireAdmin, async (req, res) => {
-  const { webhookUrl, webhookType } = req.body;
-  if (!webhookUrl) return res.status(400).json({ error: 'URL manquante' });
+  const { webhookUrl, webhookType, webhookLanguage } = req.body;
+  if (!webhookUrl) return apiError(res, 400, 'missing_url');
+  const w = WEBHOOK_TEXT[webhookLanguage] || WEBHOOK_TEXT.fr;
 
   let payload;
   if (webhookType === 'slack') {
-    payload = { text: '✅ *Portainer Manager* — Test de webhook réussi !' };
+    payload = { text: `✅ *Portainer Manager* — ${w.testOk}` };
   } else if (webhookType === 'teams') {
-    payload = { '@type': 'MessageCard', themeColor: '13BEF9', summary: 'Test webhook', sections: [{ activityTitle: '✅ Portainer Manager', activitySubtitle: 'Test de webhook réussi !' }] };
+    payload = { '@type': 'MessageCard', themeColor: '13BEF9', summary: 'Test webhook', sections: [{ activityTitle: '✅ Portainer Manager', activitySubtitle: w.testOk }] };
   } else {
     payload = { event: 'test', message: 'Portainer Manager webhook test', timestamp: new Date().toISOString() };
   }
@@ -425,7 +548,7 @@ app.post('/api/config/test-webhook', requireAdmin, async (req, res) => {
     await axios.post(webhookUrl, payload, { timeout: 5000 });
     res.json({ success: true });
   } catch (e) {
-    res.status(502).json({ error: e.message });
+    apiError(res, 502, 'webhook_failed', { detail: e.message });
   }
 });
 
@@ -463,7 +586,7 @@ function normalizeImportedInstance(raw, existing) {
 
 app.post('/api/backup/import', requireAdmin, (req, res) => {
   const { instances: incoming, config } = req.body;
-  if (!Array.isArray(incoming)) return res.status(400).json({ error: 'Format invalide : "instances" doit être un tableau' });
+  if (!Array.isArray(incoming)) return apiError(res, 400, 'invalid_backup');
 
   const current = loadInstances();
   let added = 0, updated = 0, skipped = 0;
@@ -537,31 +660,31 @@ app.get('/metrics', (req, res) => {
   if (METRICS_TOKEN) {
     const auth = req.get('authorization');
     const bearer = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
-    if ((bearer || req.query.token) !== METRICS_TOKEN) return res.status(401).type('text/plain').send('Unauthorized\n');
+    if (!tokenMatches(bearer || req.query.token, METRICS_TOKEN)) return res.status(401).type('text/plain').send('Unauthorized\n');
   } else if (!req.session?.authenticated) {
-    return res.status(401).type('text/plain').send('Unauthorized — configurez METRICS_TOKEN pour le scraping sans session, ou utilisez une session authentifiée\n');
+    return res.status(401).type('text/plain').send('Unauthorized — set METRICS_TOKEN to scrape without a session, or use an authenticated session\n');
   }
 
   const instances = loadInstances();
   const latest = latestVersionCache.version;
   const lines = [
-    '# HELP portainer_manager_app_info Informations sur l\'application (toujours à 1).',
+    '# HELP portainer_manager_app_info Application information (always 1).',
     '# TYPE portainer_manager_app_info gauge',
     `portainer_manager_app_info{version="${promEscape(APP_VERSION)}"} 1`,
-    '# HELP portainer_manager_instances_total Nombre total d\'instances configurées.',
+    '# HELP portainer_manager_instances_total Number of configured instances.',
     '# TYPE portainer_manager_instances_total gauge',
     `portainer_manager_instances_total ${instances.length}`,
-    '# HELP portainer_manager_instance_up Dernier statut connu : joignable (1) ou non (0).',
+    '# HELP portainer_manager_instance_up Last known status: reachable (1) or not (0).',
     '# TYPE portainer_manager_instance_up gauge',
-    '# HELP portainer_manager_instance_containers_running Conteneurs actifs.',
+    '# HELP portainer_manager_instance_containers_running Running containers.',
     '# TYPE portainer_manager_instance_containers_running gauge',
-    '# HELP portainer_manager_instance_containers_stopped Conteneurs arrêtés.',
+    '# HELP portainer_manager_instance_containers_stopped Stopped containers.',
     '# TYPE portainer_manager_instance_containers_stopped gauge',
-    '# HELP portainer_manager_instance_stacks Nombre de stacks.',
+    '# HELP portainer_manager_instance_stacks Number of stacks.',
     '# TYPE portainer_manager_instance_stacks gauge',
-    '# HELP portainer_manager_instance_uptime_ratio Ratio de disponibilité sur l\'historique conservé (0 à 1).',
+    '# HELP portainer_manager_instance_uptime_ratio Availability ratio over the retained history (0 to 1).',
     '# TYPE portainer_manager_instance_uptime_ratio gauge',
-    '# HELP portainer_manager_instance_portainer_outdated Mise à jour Portainer disponible (1) ou non (0).',
+    '# HELP portainer_manager_instance_portainer_outdated Portainer update available (1) or not (0).',
     '# TYPE portainer_manager_instance_portainer_outdated gauge',
   ];
 
@@ -599,12 +722,12 @@ app.get('/api/instances', (req, res) => {
 
 app.post('/api/instances', requireAdmin, (req, res) => {
   const { name, url, token, environment, notes } = req.body;
-  if (!url || !token) return res.status(400).json({ error: 'url et token requis' });
+  if (!url || !token) return apiError(res, 400, 'url_token_required');
 
   const normalizedUrl = url.replace(/\/$/, '');
   const instances = loadInstances();
   if (instances.some(i => i.url === normalizedUrl))
-    return res.status(409).json({ error: 'Une instance avec cette URL existe déjà' });
+    return apiError(res, 409, 'duplicate_url');
 
   const instance = {
     id: uuidv4(),
@@ -626,11 +749,11 @@ app.put('/api/instances/:id', requireAdmin, (req, res) => {
   const { name, url, token, environment, notes } = req.body;
   const instances = loadInstances();
   const idx = instances.findIndex(i => i.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Instance introuvable' });
+  if (idx === -1) return apiError(res, 404, 'not_found');
 
   const normalizedUrl = url ? url.replace(/\/$/, '') : instances[idx].url;
   if (url && instances.some((i, j) => j !== idx && i.url === normalizedUrl))
-    return res.status(409).json({ error: 'Une instance avec cette URL existe déjà' });
+    return apiError(res, 409, 'duplicate_url');
 
   instances[idx] = {
     ...instances[idx],
@@ -649,7 +772,7 @@ app.put('/api/instances/:id', requireAdmin, (req, res) => {
 app.delete('/api/instances/:id', requireAdmin, (req, res) => {
   const instances = loadInstances();
   const idx = instances.findIndex(i => i.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Instance introuvable' });
+  if (idx === -1) return apiError(res, 404, 'not_found');
 
   const deletedName = instances[idx].name;
   instances.splice(idx, 1);
@@ -665,7 +788,7 @@ app.delete('/api/instances/:id', requireAdmin, (req, res) => {
 app.get('/api/instances/:id/data', async (req, res) => {
   const instances = loadInstances();
   const instance = instances.find(i => i.id === req.params.id);
-  if (!instance) return res.status(404).json({ error: 'Instance introuvable' });
+  if (!instance) return apiError(res, 404, 'not_found');
 
   let token;
   try {
@@ -677,6 +800,7 @@ app.get('/api/instances/:id/data', async (req, res) => {
     const result = {
       online: false,
       error: 'Token illisible (SESSION_SECRET incorrect)',
+      errorCode: 'token_unreadable',
       version: null, dockerVersion: null, endpointsCount: 0, stacksCount: 0,
       runningContainers: 0, stoppedContainers: 0, totalContainers: 0, servicesCount: 0,
     };
@@ -730,7 +854,7 @@ app.get('/api/instances/:id/data', async (req, res) => {
 // ── Recherche globale (conteneurs/stacks à travers tout le parc) ─────────────
 app.get('/api/search', async (req, res) => {
   const q = (req.query.q || '').toString().trim().toLowerCase();
-  if (q.length < 2) return res.status(400).json({ error: 'Requête trop courte (2 caractères minimum)' });
+  if (q.length < 2) return apiError(res, 400, 'query_too_short');
 
   const instances = loadInstances();
 

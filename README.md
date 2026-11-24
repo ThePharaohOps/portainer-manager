@@ -1,6 +1,7 @@
 # Portainer Manager
 
 [![Version](https://img.shields.io/github/v/tag/ThePharaohOps/portainer-manager?label=version&sort=semver)](https://github.com/ThePharaohOps/portainer-manager/tags)
+[![CI](https://github.com/ThePharaohOps/portainer-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/ThePharaohOps/portainer-manager/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-24--alpine-339933?logo=node.js&logoColor=white)](Dockerfile)
 
@@ -8,7 +9,7 @@
 
 Secure web dashboard for managing multiple Portainer instances from a single interface.
 
-> **Note**: this documentation is available in English and French, but the application's own interface is currently **French-only** (no i18n yet) — see the screenshots below for exactly what you'll see on screen.
+The interface is available in **English and French** (picked from your browser language, switchable with the FR/EN button) with a **dark, light or automatic** theme.
 
 ## Overview
 
@@ -16,6 +17,9 @@ Secure web dashboard for managing multiple Portainer instances from a single int
 
 **Grid view**
 ![Grid view](screenshots/dashboard-grid.png)
+
+**Light theme**
+![Light theme](screenshots/dashboard-light.png)
 
 **List view**
 ![List view](screenshots/dashboard-list.png)
@@ -50,7 +54,7 @@ Secure web dashboard for managing multiple Portainer instances from a single int
 
 ### Cards
 - Online / offline status with a colored border (green/red)
-- Colored **environment** badge: Intégration, Recette, Pré-production, Production *(these four labels are currently French-only in the UI — see note above)*
+- Colored **environment** badge: Integration, UAT, Pre-production, Production
 - Metrics: environments, running/stopped containers, stacks, Swarm services
 - **Portainer** and **Docker** versions with logos
 - **"Up to date"** or **"vX.X.X available"** badge, compared against the latest CE release
@@ -60,13 +64,18 @@ Secure web dashboard for managing multiple Portainer instances from a single int
 
 ### Views and navigation
 - **Grid view** (default) or **list view** (dense table)
-- **Group by environment**: Production / Pré-production / Recette / Intégration sections
+- **Group by environment**: Production / Pre-production / UAT / Integration sections
 - **Sort**: by name, environment, status, version, date added
 - **Search** by name or URL
 - **Global search** (🔍 icon): find a container or a stack by name **across every instance**, results grouped by instance with a direct link to Portainer — see [Global search](#global-search)
 - **Filter**: All / Online / Offline / Updates available
 - **CSV export** of the whole fleet's state
 - **Bulk actions** (admin): select multiple instances to change their environment in bulk or export only the selection to CSV
+
+### Language and theme
+- **English / French** interface: detected from the browser language on first visit, then switchable at any time with the **FR/EN** button (header and login page). The choice is remembered per browser
+- **Dark** (default), **light** or **automatic** theme (follows the operating system), toggled with the sun/moon button
+- CSV exports, dates and the audit log follow the selected language
 
 ### Roles and audit
 - Optional **read-only role (viewer)** via an OIDC claim/group: hides Add/Edit/Delete, Settings, Audit and bulk actions — see [Admin/viewer roles (OIDC)](#adminviewer-roles-oidc)
@@ -78,6 +87,7 @@ Secure web dashboard for managing multiple Portainer instances from a single int
 - Automatic notification when an instance changes status (online ↔ offline)
 - Supports: **Slack**, **Microsoft Teams**, **Generic JSON**
 - **Filter by environment**: only notify for Production, for example (no checkbox ticked = all)
+- **Notification language**: French (default) or English
 - "Test" button in settings
 
 ### Settings (⚙️ button)
@@ -89,6 +99,9 @@ Secure web dashboard for managing multiple Portainer instances from a single int
 
 ### Security
 - **Authentication** via a shared password, with an 8h session persisted to disk (`data/sessions/`): restarting the container doesn't log active sessions out
+- **Brute-force protection**: after 10 failed password attempts (`LOGIN_MAX_ATTEMPTS`) from the same IP, password login is blocked for 15 minutes for that IP (SSO stays available). Failed and blocked attempts appear in the audit log with the client IP
+- **Hardened sessions**: a new session id on every login (no session fixation), `HttpOnly` + `SameSite=Lax` cookie (`Secure` automatically over HTTPS), constant-time password comparison
+- **Security headers**: strict Content-Security-Policy (no inline scripts), `X-Frame-Options: DENY` (no clickjacking), `X-Content-Type-Options: nosniff`, `Referrer-Policy`
 - Optional **SSO / OIDC** (Azure AD/Entra ID, Okta, Keycloak, Google Workspace, Authentik...): layers on top of the local password, which always stays available as a fallback — see [Configure SSO (OIDC)](#configure-sso-oidc)
 - **API tokens encrypted at rest** (AES-256-GCM, key derived from `SESSION_SECRET`) in `data/instances.json`
 - API tokens are **never** sent to the browser
@@ -106,7 +119,24 @@ Secure web dashboard for managing multiple Portainer instances from a single int
 
 ## Quick start
 
-### With Docker (recommended)
+### With the prebuilt image (fastest)
+
+Each release is published to the GitHub Container Registry for `linux/amd64` and `linux/arm64` (Raspberry Pi, Apple Silicon...), starting with v1.4.0:
+
+```bash
+docker run -d --name portainer-manager --restart unless-stopped \
+  -p 3000:3000 \
+  -e ADMIN_PASSWORD=change-me \
+  -e SESSION_SECRET=a-long-random-unique-string \
+  -v portainer-manager-data:/app/data \
+  ghcr.io/thepharaohops/portainer-manager:latest
+```
+
+Generate `SESSION_SECRET` once (e.g. `openssl rand -base64 32`) and keep it: it also encrypts the stored API tokens. Available tags: `latest`, an exact version (`1.4.0`) or a minor line (`1.4`).
+
+With Docker Compose, replace `build: .` with `image: ghcr.io/thepharaohops/portainer-manager:latest` in `docker-compose.yml`.
+
+### Building from source with Docker
 
 ```bash
 # Copy and configure the variables
@@ -122,11 +152,7 @@ npm install
 npm start
 ```
 
-For development with hot reload:
-
-```bash
-npm run dev
-```
+For development, `npm run dev` restarts the server automatically on every change (Node's built-in `--watch`, no extra dependency).
 
 The app is available at **http://localhost:3000** (or the IP set in `HOST_IP`).
 
@@ -140,6 +166,9 @@ The app is available at **http://localhost:3000** (or the IP set in `HOST_IP`).
 | `HOST_IP`        | *(all interfaces)*              | IP shown in the startup logs              |
 | `ADMIN_PASSWORD` | `admin`                         | ⚠️ Dashboard password — change this       |
 | `SESSION_SECRET` | *(random on every restart)*     | Key used to sign sessions and encrypt API tokens |
+| `TRUST_PROXY`    | *(unset)*                       | Set to `1` behind a reverse proxy (see [Running behind a reverse proxy](#running-behind-a-reverse-proxy)) |
+| `LOGIN_MAX_ATTEMPTS` | `10`                        | Failed password attempts allowed per IP before a 15-minute block |
+| `DATA_DIR`       | `./data`                        | Where instances, settings, sessions and the audit log are stored |
 
 > **Important**: without a fixed `SESSION_SECRET`, sessions are invalidated **and encrypted API tokens become unreadable** on every restart.
 
@@ -268,7 +297,7 @@ The app listens on plain HTTP on the internal port set by `PORT` (3000 by defaul
 
 In every case:
 - Adjust `proxy_pass` / `reverse_proxy` to the port actually exposed on the host (the one in `ports:` in `docker-compose.yml`, not necessarily 3000).
-- The session cookie isn't marked `Secure`, so it works as-is behind a proxy that terminates TLS (the proxy → app hop stays plain HTTP internally). No extra app-side configuration needed.
+- Set **`TRUST_PROXY=1`** (one proxy in front of the app). The app then reads the real client IP from `X-Forwarded-For`. Without it, every user appears to come from the proxy's IP: the brute-force limit would count everyone as a single client, and 10 wrong passwords from anyone would block password login for everybody for 15 minutes (SSO keeps working). With `TRUST_PROXY` set and the proxy forwarding `X-Forwarded-Proto: https`, the session cookie is also marked `Secure`.
 - Keep `SESSION_SECRET` fixed in `.env` (see above).
 
 ### Nginx
@@ -353,6 +382,20 @@ Requires the `proxy` and `proxy_http` modules (`a2enmod proxy proxy_http` then r
 
 ---
 
+## Development and tests
+
+```bash
+npm install
+npm run dev   # auto-restart on changes
+npm test      # API, security and translation tests (Node's built-in test runner)
+```
+
+The tests start the real server in a temporary data directory, with a fake Portainer API, so they never touch your `data/` folder or your `.env`. They cover login, brute-force lockout, sessions, security headers, instance CRUD and token encryption, live data, global search, `/metrics`, and the completeness of the French/English translations (every key used in the pages must exist in both languages).
+
+GitHub Actions runs the tests, a production dependency audit and a Docker build + health check on every push and pull request. Pushing a `vX.Y.Z` tag publishes the multi-architecture image to GHCR.
+
+---
+
 ## Project structure
 
 ```
@@ -365,7 +408,9 @@ portainer-manager/
 ├── CHANGELOG.md
 ├── README.fr.md           # French version of this file
 ├── .env                   # Environment variables (do not commit)
-├── screenshots/
+├── .github/workflows/     # CI (tests, audit, Docker build) and image publishing
+├── test/                  # Automated tests (npm test)
+├── screenshots/           # English screenshots (French ones in screenshots/fr/)
 ├── data/
 │   ├── instances.json     # Saved instances, encrypted tokens (created automatically)
 │   ├── config.json        # Webhook config, environment filter, uptime retention (created automatically)
@@ -374,8 +419,10 @@ portainer-manager/
 │   └── sessions/          # Sessions persisted to disk (created automatically)
 └── public/
     ├── index.html         # Main dashboard
-    ├── login.html         # Login page
-    ├── status.html        # Public status page (no authentication)
+    ├── login.html         # Login page (+ login.js)
+    ├── status.html        # Public status page, no authentication (+ status.js)
+    ├── i18n.js            # French/English translations
+    ├── theme.js           # Dark/light/automatic theme
     ├── style.css
     └── app.js
 ```
@@ -383,6 +430,8 @@ portainer-manager/
 ---
 
 ## REST API
+
+Errors are returned as `{"error": "<message>", "code": "<code>"}`. `code` is stable (e.g. `bad_password`, `too_many_attempts`, `duplicate_url`, `not_found`) and is what the interface translates. A blocked login answers `429` with a `Retry-After` header.
 
 ### Auth
 | Method | Route                  | Description                      |
@@ -407,7 +456,7 @@ portainer-manager/
 | Method | Route                           | Description                             |
 |--------|-----------------------------------|--------------------------------------------|
 | GET    | `/api/uptime`                    | Uptime history per instance — admin and viewer |
-| GET    | `/api/config`                    | Configuration (webhook, environment filter, uptime retention) — admin |
+| GET    | `/api/config`                    | Configuration (webhook, notification language, environment filter, uptime retention) — admin |
 | PUT    | `/api/config`                    | Update the configuration — admin        |
 | POST   | `/api/config/test-webhook`       | Test a webhook — admin                  |
 | GET    | `/api/portainer/latest-version`  | Latest CE version (1h cache)             |
@@ -433,7 +482,7 @@ The **⚙️ Settings → Backup** button exports a JSON file containing every i
 
 ### Restoring on another machine
 
-To migrate to a new install (new server, second PC...), **copy the original install's `SESSION_SECRET` into the new one's `.env`** before importing the backup. Otherwise, instances will show up fine in the table (metadata isn't encrypted), but every token will stay undecryptable — an "Offline" card with the error `Token illisible (SESSION_SECRET incorrect)`, and a `[crypto] Token illisible pour "…"` line in the logs.
+To migrate to a new install (new server, second PC...), **copy the original install's `SESSION_SECRET` into the new one's `.env`** before importing the backup. Otherwise, instances will show up fine in the table (metadata isn't encrypted), but every token will stay undecryptable — an "Offline" card with the error `Unreadable token (wrong SESSION_SECRET)`, and a `[crypto] Token illisible pour "…"` line in the logs.
 
 If this happens after the fact: no need to re-import anything, just fix `SESSION_SECRET` in the new machine's `.env` and restart the container (`docker compose up -d`) — already-imported tokens become readable again immediately, since the encryption key was the only thing missing.
 

@@ -20,7 +20,8 @@ const state = {
 };
 
 const ENV_ORDER = ['production', 'preprod', 'recette', 'integration', null];
-const ENV_LABELS = { integration: 'Intégration', recette: 'Recette', preprod: 'Pré-production', production: 'Production' };
+const ENVS = ['integration', 'recette', 'preprod', 'production'];
+const envLabel = env => t(`env.${env}`);
 const ENV_CLASSES = { integration: 'env-integration', recette: 'env-recette', preprod: 'env-preprod', production: 'env-production' };
 
 /* ── DOM ───────────────────────────────────────────────────────────────────── */
@@ -35,10 +36,10 @@ function escapeHtml(str) {
 /* ── API ───────────────────────────────────────────────────────────────────── */
 async function apiFetch(url, options = {}) {
   const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options });
-  if (res.status === 401) { window.location.href = '/login'; throw new Error('Non authentifié'); }
+  if (res.status === 401) { window.location.href = '/login'; throw new Error(t('err.unauthenticated')); }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `HTTP ${res.status}`);
+    throw new Error(i18n.errorMessage(body, res.status));
   }
   return res.json();
 }
@@ -58,7 +59,7 @@ async function fetchUptime() {
 
 async function loadInstances() {
   try { state.instances = await apiFetch('/api/instances'); }
-  catch (e) { showToast('Impossible de charger les instances : ' + e.message, 'error'); }
+  catch (e) { showToast(t('instance.loadFailed', { msg: e.message }), 'error'); }
   renderAll();
   refreshAllLiveData();
 }
@@ -75,7 +76,7 @@ async function fetchLiveData(instance) {
   try {
     state.liveData[instance.id] = await apiFetch(`/api/instances/${instance.id}/data`);
   } catch {
-    state.liveData[instance.id] = { online: false, error: 'Requête échouée' };
+    state.liveData[instance.id] = { online: false, error: t('card.requestFailed') };
   }
 }
 
@@ -172,11 +173,11 @@ function renderGrid() {
       const section = document.createElement('div');
       section.className = 'env-section';
 
-      const label = env ? ENV_LABELS[env] : 'Non défini';
+      const label = env ? envLabel(env) : t('env.none');
       const cls   = env ? ENV_CLASSES[env] : '';
       const header = document.createElement('div');
       header.className = 'env-section-header';
-      header.innerHTML = `<span class="env-badge ${cls}">${label}</span><span class="env-section-count">${groups[key].length} instance${groups[key].length > 1 ? 's' : ''}</span>`;
+      header.innerHTML = `<span class="env-badge ${cls}">${escapeHtml(label)}</span><span class="env-section-count">${escapeHtml(tp('group.count', groups[key].length))}</span>`;
       section.appendChild(header);
 
       const subGrid = document.createElement('div');
@@ -198,7 +199,7 @@ function renderList() {
   const visible = filteredSorted();
 
   if (visible.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;padding:40px;color:var(--text-muted)">Aucune instance</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13" class="list-empty">${escapeHtml(t('empty.noMatch'))}</td></tr>`;
     updateStats();
     return;
   }
@@ -213,7 +214,7 @@ function renderList() {
     tr.className = `row-${statusClass}`;
 
     const envHtml = inst.environment
-      ? `<span class="env-badge ${ENV_CLASSES[inst.environment]}">${ENV_LABELS[inst.environment]}</span>`
+      ? `<span class="env-badge ${ENV_CLASSES[inst.environment]}">${envLabel(inst.environment)}</span>`
       : '<span style="color:var(--text-muted)">—</span>';
 
     let portainerVer = '—';
@@ -224,10 +225,10 @@ function renderList() {
       if (state.latestVersion) {
         const outdated = isOutdated(d.version, state.latestVersion);
         const updateTitle = outdated ? `v${d.version} → v${state.latestVersion}` : `v${d.version}`;
-        updateBadgeHtml = `<span class="update-badge ${outdated ? 'outdated' : 'up-to-date'}" title="${updateTitle}">${outdated ? `v${state.latestVersion} disponible` : 'À jour'}</span>`;
+        updateBadgeHtml = `<span class="update-badge ${outdated ? 'outdated' : 'up-to-date'}" title="${escapeHtml(updateTitle)}">${escapeHtml(outdated ? t('card.updateAvailable', { v: state.latestVersion }) : t('card.upToDate'))}</span>`;
         showUpdateBtn = outdated;
       }
-      portainerVer = `<div class="list-versions">${versionBadge}${updateBadgeHtml}${showUpdateBtn ? `<button type="button" class="update-btn list-update-btn">Mettre à jour</button>` : ''}</div>`;
+      portainerVer = `<div class="list-versions">${versionBadge}${updateBadgeHtml}${showUpdateBtn ? `<button type="button" class="update-btn list-update-btn">${escapeHtml(t('card.update'))}</button>` : ''}</div>`;
     }
 
     const dockerVer = d?.dockerVersion
@@ -261,13 +262,13 @@ function renderList() {
       <td>${uptimeHtml}</td>
       <td>
         <div class="list-actions">
-          <button class="icon-btn open-btn" title="Ouvrir">
+          <button class="icon-btn open-btn" title="${escapeHtml(t('card.open'))}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
           </button>
-          <button class="icon-btn edit-btn" title="Modifier">
+          <button class="icon-btn edit-btn" title="${escapeHtml(t('card.edit'))}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
-          <button class="icon-btn delete-btn" title="Supprimer">
+          <button class="icon-btn delete-btn" title="${escapeHtml(t('card.delete'))}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
           </button>
         </div>
@@ -293,6 +294,7 @@ function renderList() {
 function buildCard(inst) {
   const tpl = document.getElementById('cardTemplate');
   const card = tpl.content.cloneNode(true).querySelector('.card');
+  i18n.apply(card);
   const d  = state.liveData[inst.id];
   const up = state.uptime[inst.id];
 
@@ -305,17 +307,17 @@ function buildCard(inst) {
 
   // Status badge
   const badge = card.querySelector('.status-badge');
-  if (!d) { badge.textContent = 'Chargement…'; badge.className = 'status-badge loading'; }
-  else if (d.online)  { badge.textContent = 'En ligne';   badge.className = 'status-badge online'; }
-  else                { badge.textContent = 'Hors ligne'; badge.className = 'status-badge offline'; }
+  if (!d) { badge.textContent = t('common.loading'); badge.className = 'status-badge loading'; }
+  else if (d.online)  { badge.textContent = t('common.online');  badge.className = 'status-badge online'; }
+  else                { badge.textContent = t('common.offline'); badge.className = 'status-badge offline'; }
 
   card.querySelector('.card-name').textContent = inst.name;
   card.querySelector('.card-url').textContent  = inst.url;
 
   // Env badge
   const envBadge = card.querySelector('.env-badge');
-  if (inst.environment && ENV_LABELS[inst.environment]) {
-    envBadge.textContent  = ENV_LABELS[inst.environment];
+  if (inst.environment && ENV_CLASSES[inst.environment]) {
+    envBadge.textContent  = envLabel(inst.environment);
     envBadge.className    = `env-badge ${ENV_CLASSES[inst.environment]}`;
     envBadge.style.display = '';
   }
@@ -373,7 +375,7 @@ function buildCard(inst) {
     portainerBadge.style.display = '';
     if (state.latestVersion) {
       const outdated = isOutdated(d.version, state.latestVersion);
-      updateBadge.textContent = outdated ? `v${state.latestVersion} disponible` : 'À jour';
+      updateBadge.textContent = outdated ? t('card.updateAvailable', { v: state.latestVersion }) : t('card.upToDate');
       updateBadge.className   = `update-badge ${outdated ? 'outdated' : 'up-to-date'}`;
       updateBadge.title       = outdated ? `v${d.version} → v${state.latestVersion}` : `v${d.version}`;
       updateBadge.style.display = '';
@@ -395,7 +397,10 @@ function buildCard(inst) {
 
   // Error
   const errEl = card.querySelector('.card-error');
-  if (d && !d.online && d.error) { errEl.textContent = d.error; errEl.title = d.error; }
+  if (d && !d.online && d.error) {
+    const msg = d.errorCode ? t(`err.${d.errorCode}`) : d.error;
+    errEl.textContent = msg; errEl.title = msg;
+  }
 
   // Actions
   card.querySelector('.open-btn').addEventListener('click', () => window.open(inst.url, '_blank', 'noopener,noreferrer'));
@@ -456,7 +461,7 @@ function updateAlertBell() {
   outdated.forEach(({ inst, version }, idx) => {
     const li = document.createElement('li');
     li.className = 'alert-item';
-    const envHtml = inst.environment ? `<span class="alert-item-env env-badge ${ENV_CLASSES[inst.environment]}">${ENV_LABELS[inst.environment]}</span>` : '';
+    const envHtml = inst.environment ? `<span class="alert-item-env env-badge ${ENV_CLASSES[inst.environment]}">${envLabel(inst.environment)}</span>` : '';
     li.innerHTML = `
       <span class="alert-item-rank rank-${idx + 1}">${idx + 1}</span>
       <div class="alert-item-info">
@@ -470,44 +475,44 @@ function updateAlertBell() {
 /* ── CRUD ──────────────────────────────────────────────────────────────────── */
 async function addInstance(name, url, token, environment, notes) {
   const btn = $('submitBtn');
-  btn.disabled = true; btn.textContent = 'Ajout en cours…';
+  btn.disabled = true; btn.textContent = t('instance.adding');
   $('formError').textContent = '';
   try {
     const inst = await apiFetch('/api/instances', { method: 'POST', body: JSON.stringify({ name, url, token, environment, notes }) });
     state.instances.push(inst);
     closeModal();
-    showToast(`Instance "${inst.name}" ajoutée`, 'success');
+    showToast(t('instance.added', { name: inst.name }), 'success');
     renderAll();
     fetchLiveData(inst).then(() => { updateStats(); renderAll(); });
   } catch (e) { $('formError').textContent = e.message; }
-  finally { btn.disabled = false; btn.textContent = 'Ajouter'; }
+  finally { btn.disabled = false; btn.textContent = t('header.add'); }
 }
 
 async function editInstance(id, name, url, token, environment, notes) {
   const btn = $('submitBtn');
-  btn.disabled = true; btn.textContent = 'Enregistrement…';
+  btn.disabled = true; btn.textContent = t('instance.saving');
   $('formError').textContent = '';
   try {
     const updated = await apiFetch(`/api/instances/${id}`, { method: 'PUT', body: JSON.stringify({ name, url, environment, notes, ...(token ? { token } : {}) }) });
     const idx = state.instances.findIndex(i => i.id === id);
     if (idx !== -1) state.instances[idx] = updated;
     closeModal();
-    showToast(`Instance "${updated.name}" modifiée`, 'success');
+    showToast(t('instance.updated', { name: updated.name }), 'success');
     fetchLiveData(updated).then(() => { updateStats(); renderAll(); });
   } catch (e) { $('formError').textContent = e.message; }
-  finally { btn.disabled = false; btn.textContent = 'Enregistrer'; }
+  finally { btn.disabled = false; btn.textContent = t('common.save'); }
 }
 
 async function deleteInstance(id, name) {
-  if (!confirm(`Supprimer l'instance "${name}" ?`)) return;
+  if (!confirm(t('instance.confirmDelete', { name }))) return;
   try {
     await apiFetch(`/api/instances/${id}`, { method: 'DELETE' });
     state.instances = state.instances.filter(i => i.id !== id);
     delete state.liveData[id];
     delete state.uptime[id];
-    showToast(`Instance "${name}" supprimée`, 'info');
+    showToast(t('instance.deleted', { name }), 'info');
     renderAll(); updateStats();
-  } catch (e) { showToast('Erreur : ' + e.message, 'error'); }
+  } catch (e) { showToast(t('common.error', { msg: e.message }), 'error'); }
 }
 
 /* ── Modal add/edit ────────────────────────────────────────────────────────── */
@@ -515,13 +520,14 @@ function openModal() {
   state.editId = null;
   $('addForm').reset();
   $('formError').textContent = '';
-  $('modalTitle').textContent          = 'Ajouter une instance Portainer';
-  $('labelToken').innerHTML            = 'API Token <span class="required">*</span>';
+  $('modalTitle').textContent          = t('instance.addTitle');
+  $('labelTokenText').textContent      = t('instance.token');
+  $('tokenRequiredMark').hidden        = false;
   $('fieldToken').required             = true;
   $('fieldToken').placeholder          = 'ptr_…';
-  $('tokenHint').textContent           = "Le token est stocké côté serveur et n'est jamais transmis au navigateur.";
+  $('tokenHint').textContent           = t('instance.tokenHint');
   $('fieldEnvironment').value          = '';
-  $('submitBtn').textContent           = 'Ajouter';
+  $('submitBtn').textContent           = t('header.add');
   $('modalOverlay').classList.add('open');
   $('fieldUrl').focus();
 }
@@ -530,17 +536,18 @@ function openEditModal(inst) {
   state.editId = inst.id;
   $('addForm').reset();
   $('formError').textContent = '';
-  $('modalTitle').textContent          = `Modifier "${inst.name}"`;
+  $('modalTitle').textContent          = t('instance.editTitle', { name: inst.name });
   $('fieldId').value                   = inst.id;
   $('fieldName').value                 = inst.name;
   $('fieldUrl').value                  = inst.url;
   $('fieldEnvironment').value          = inst.environment || '';
   $('fieldNotes').value                = inst.notes || '';
-  $('labelToken').innerHTML            = 'Nouveau token (optionnel)';
+  $('labelTokenText').textContent      = t('instance.newToken');
+  $('tokenRequiredMark').hidden        = true;
   $('fieldToken').required             = false;
-  $('fieldToken').placeholder          = "Laisser vide pour conserver l'actuel";
-  $('tokenHint').textContent           = 'Laissez vide si vous ne souhaitez pas changer le token.';
-  $('submitBtn').textContent           = 'Enregistrer';
+  $('fieldToken').placeholder          = t('instance.tokenKeepPlaceholder');
+  $('tokenHint').textContent           = t('instance.tokenKeepHint');
+  $('submitBtn').textContent           = t('common.save');
   $('modalOverlay').classList.add('open');
   $('fieldName').focus();
 }
@@ -563,10 +570,10 @@ $('addForm').addEventListener('submit', e => {
   const env   = $('fieldEnvironment').value;
   const notes = $('fieldNotes').value.trim();
   if (state.editId) {
-    if (!url) { $('formError').textContent = 'URL requise.'; return; }
+    if (!url) { $('formError').textContent = t('instance.urlRequired'); return; }
     editInstance(state.editId, name, url, token, env, notes);
   } else {
-    if (!url || !token) { $('formError').textContent = 'URL et token requis.'; return; }
+    if (!url || !token) { $('formError').textContent = t('instance.urlTokenRequired'); return; }
     addInstance(name, url, token, env, notes);
   }
 });
@@ -579,10 +586,10 @@ $('tokenToggle').addEventListener('click', () => {
 /* ── Settings modal (webhook, affichage, uptime, SSO, sauvegarde) ────────────── */
 function renderWebhookEnvChecks(selected) {
   const container = $('webhookEnvChecks');
-  container.innerHTML = Object.keys(ENV_LABELS).map(env => `
+  container.innerHTML = ENVS.map(env => `
     <label class="checkbox-chip ${selected.includes(env) ? 'checked' : ''}" data-env="${env}">
       <input type="checkbox" value="${env}" ${selected.includes(env) ? 'checked' : ''} />
-      ${ENV_LABELS[env]}
+      ${envLabel(env)}
     </label>
   `).join('');
   container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
@@ -596,16 +603,16 @@ function getSelectedWebhookEnvs() {
 
 async function loadSsoStatus() {
   const el = $('ssoStatus');
-  el.textContent = 'Chargement…';
+  el.textContent = t('common.loading');
   try {
     const methods = await apiFetch('/api/auth/methods');
     if (methods.oidc) {
-      el.innerHTML = `<span class="status-dot on"></span> Activé — <strong>${methods.oidcLabel}</strong> <a href="/auth/oidc/login" target="_blank" class="settings-hint" style="color:var(--primary)">Tester →</a>`;
+      el.innerHTML = `<span class="status-dot on"></span> ${escapeHtml(t('settings.ssoOn'))} — <strong>${escapeHtml(methods.oidcLabel)}</strong> <a href="/auth/oidc/login" target="_blank" class="settings-link">${escapeHtml(t('settings.ssoTest'))}</a>`;
     } else {
-      el.innerHTML = `<span class="status-dot off"></span> Désactivé <span class="settings-hint">(variables OIDC_* absentes de .env)</span>`;
+      el.innerHTML = `<span class="status-dot off"></span> ${escapeHtml(t('settings.ssoOff'))} <span class="settings-hint">${escapeHtml(t('settings.ssoOffHint'))}</span>`;
     }
   } catch {
-    el.textContent = 'Impossible de récupérer le statut';
+    el.textContent = t('settings.statusUnavailable');
   }
 }
 
@@ -616,9 +623,10 @@ async function openSettings() {
     const config = await apiFetch('/api/config');
     $('webhookUrl').value  = config.webhookUrl || '';
     $('webhookType').value = config.webhookType || 'slack';
+    $('webhookLanguage').value = config.webhookLanguage || 'fr';
     renderWebhookEnvChecks(config.webhookEnvironments || []);
     $('uptimeRetention').value = config.uptimeRetention || 288;
-    $('uptimeRetentionHint').textContent = `(~${Math.round((config.uptimeRetention || 288) * state.refreshInterval / 3600000 * 10) / 10}h au rythme actuel)`;
+    $('uptimeRetentionHint').textContent = t('settings.uptimeHint', { h: Math.round((config.uptimeRetention || 288) * state.refreshInterval / 3600000 * 10) / 10 });
   } catch {}
   loadSsoStatus();
   $('settingsOverlay').classList.add('open');
@@ -634,7 +642,7 @@ $('settingsOverlay').addEventListener('click', e => { if (e.target === $('settin
 $('uptimeRetention').addEventListener('input', () => {
   const interval = parseInt($('refreshInterval').value, 10);
   const points = parseInt($('uptimeRetention').value, 10) || 0;
-  $('uptimeRetentionHint').textContent = `(~${Math.round(points * interval / 3600000 * 10) / 10}h au rythme actuel)`;
+  $('uptimeRetentionHint').textContent = t('settings.uptimeHint', { h: Math.round(points * interval / 3600000 * 10) / 10 });
 });
 
 $('saveSettingsBtn').addEventListener('click', async () => {
@@ -645,6 +653,7 @@ $('saveSettingsBtn').addEventListener('click', async () => {
       body: JSON.stringify({
         webhookUrl: $('webhookUrl').value.trim(),
         webhookType: $('webhookType').value,
+        webhookLanguage: $('webhookLanguage').value,
         webhookEnvironments: getSelectedWebhookEnvs(),
         uptimeRetention: parseInt($('uptimeRetention').value, 10) || 288,
       }),
@@ -656,19 +665,19 @@ $('saveSettingsBtn').addEventListener('click', async () => {
       scheduleRefresh();
     }
     closeSettings();
-    showToast('Paramètres enregistrés', 'success');
+    showToast(t('settings.saved'), 'success');
   } catch (e) { $('settingsError').textContent = e.message; }
 });
 
 $('testWebhookBtn').addEventListener('click', async () => {
   $('settingsError').textContent = '';
   const btn = $('testWebhookBtn');
-  btn.disabled = true; btn.textContent = 'Test…';
+  btn.disabled = true; btn.textContent = t('settings.testing');
   try {
-    await apiFetch('/api/config/test-webhook', { method: 'POST', body: JSON.stringify({ webhookUrl: $('webhookUrl').value.trim(), webhookType: $('webhookType').value }) });
-    showToast('Webhook testé avec succès !', 'success');
-  } catch (e) { $('settingsError').textContent = 'Échec : ' + e.message; }
-  finally { btn.disabled = false; btn.textContent = 'Tester le webhook'; }
+    await apiFetch('/api/config/test-webhook', { method: 'POST', body: JSON.stringify({ webhookUrl: $('webhookUrl').value.trim(), webhookType: $('webhookType').value, webhookLanguage: $('webhookLanguage').value }) });
+    showToast(t('settings.webhookTested'), 'success');
+  } catch (e) { $('settingsError').textContent = t('settings.failed', { msg: e.message }); }
+  finally { btn.disabled = false; btn.textContent = t('settings.testWebhook'); }
 });
 
 $('exportConfigBtn').addEventListener('click', async () => {
@@ -679,8 +688,8 @@ $('exportConfigBtn').addEventListener('click', async () => {
     link.href = URL.createObjectURL(blob);
     link.download = `portainer-manager-backup-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
-    showToast('Sauvegarde exportée', 'success');
-  } catch (e) { $('settingsError').textContent = 'Échec de l\'export : ' + e.message; }
+    showToast(t('settings.exported'), 'success');
+  } catch (e) { $('settingsError').textContent = t('settings.exportFailed', { msg: e.message }); }
 });
 
 $('importConfigBtn').addEventListener('click', () => $('importConfigFile').click());
@@ -693,11 +702,11 @@ $('importConfigFile').addEventListener('change', async () => {
     const text = await file.text();
     const backup = JSON.parse(text);
     const result = await apiFetch('/api/backup/import', { method: 'POST', body: JSON.stringify(backup) });
-    showToast(`Import : ${result.added} ajoutée(s), ${result.updated} mise(s) à jour${result.skipped ? `, ${result.skipped} ignorée(s)` : ''}`, 'success');
+    showToast(t('settings.imported', result) + (result.skipped ? t('settings.importedSkipped', result) : ''), 'success');
     closeSettings();
     await loadInstances();
   } catch (e) {
-    $('settingsError').textContent = 'Échec de l\'import : ' + e.message;
+    $('settingsError').textContent = t('settings.importFailed', { msg: e.message });
   } finally {
     $('importConfigFile').value = '';
   }
@@ -709,21 +718,21 @@ function openUpdateGuide(inst, d) {
   const from     = d?.version;
   const to       = state.latestVersion;
 
-  $('updateGuideTitle').textContent    = `Mettre à jour "${inst.name}"`;
+  $('updateGuideTitle').textContent    = t('guide.titleFor', { name: inst.name });
   $('updateGuideSubtitle').textContent = `v${from} → v${to}`;
-  $('updateGuideMode').textContent     = isSwarm ? 'Mode détecté : Docker Swarm' : 'Mode détecté : Docker standalone';
+  $('updateGuideMode').textContent     = isSwarm ? t('guide.modeSwarm') : t('guide.modeStandalone');
   $('updateGuideMode').className       = `update-guide-mode ${isSwarm ? 'swarm' : 'standalone'}`;
 
   let code, note;
   if (isSwarm) {
     code = [
-      `# Sur un nœud manager du swarm`,
+      t('guide.swarmComment'),
       `docker service update \\`,
       `  --image portainer/portainer-ce:${to} \\`,
       `  --force \\`,
-      `  <nom_du_service_portainer>`,
+      `  ${t('guide.serviceName')}`,
     ].join('\n');
-    note = "Remplacez <nom_du_service_portainer> par le nom réel du service (ex. portainer_agent ou portainer). Trouvez-le avec `docker service ls | grep portainer`.";
+    note = t('guide.swarmNote', { placeholder: t('guide.serviceName') });
   } else {
     code = [
       `docker pull portainer/portainer-ce:${to}`,
@@ -735,7 +744,7 @@ function openUpdateGuide(inst, d) {
       `  -v portainer_data:/data \\`,
       `  portainer/portainer-ce:${to}`,
     ].join('\n');
-    note = "Adaptez le nom du conteneur (--name) et le volume de données (portainer_data) s'ils diffèrent de votre installation actuelle.";
+    note = t('guide.standaloneNote');
   }
 
   $('updateGuideCode').textContent = code;
@@ -751,38 +760,34 @@ $('updateGuideOverlay').addEventListener('click', e => { if (e.target === $('upd
 $('updateGuideCopyBtn').addEventListener('click', async () => {
   try {
     await navigator.clipboard.writeText($('updateGuideCode').textContent);
-    showToast('Commandes copiées', 'success');
-  } catch { showToast('Impossible de copier', 'error'); }
+    showToast(t('guide.copied'), 'success');
+  } catch { showToast(t('guide.copyFailed'), 'error'); }
 });
 
 /* ── Audit log modal ───────────────────────────────────────────────────────── */
-const AUDIT_LABELS = {
-  'instance:create': 'a créé l\'instance',
-  'instance:update': 'a modifié l\'instance',
-  'instance:delete': 'a supprimé l\'instance',
-  'config:update': 'a modifié la configuration',
-  'backup:import': 'a importé une sauvegarde',
-  'auth:login': 'connexion',
-  'auth:login_failed': 'échec de connexion',
-};
+function auditLabel(action) {
+  const key = `audit.action.${action}`;
+  const label = t(key);
+  return label === key ? action : label;
+}
 
 async function openAuditLog() {
   $('auditOverlay').classList.add('open');
   const list = $('auditList');
-  list.innerHTML = '<li class="audit-empty">Chargement…</li>';
+  list.innerHTML = `<li class="audit-empty">${escapeHtml(t('common.loading'))}</li>`;
   try {
     const entries = await apiFetch('/api/audit');
-    if (!entries.length) { list.innerHTML = '<li class="audit-empty">Aucune action enregistrée pour le moment.</li>'; return; }
+    if (!entries.length) { list.innerHTML = `<li class="audit-empty">${escapeHtml(t('audit.empty'))}</li>`; return; }
     list.innerHTML = entries.map(e => `
       <li class="audit-item">
-        <span class="audit-ts">${new Date(e.ts).toLocaleString('fr-FR')}</span>
+        <span class="audit-ts">${new Date(e.ts).toLocaleString(i18n.locale)}</span>
         <span class="audit-user">${escapeHtml(e.user)}</span>
-        <span class="audit-action">${escapeHtml(AUDIT_LABELS[e.action] || e.action)}</span>
+        <span class="audit-action">${escapeHtml(auditLabel(e.action))}</span>
         ${e.target ? `<span class="audit-target">${escapeHtml(e.target)}</span>` : ''}
       </li>
     `).join('');
   } catch (e) {
-    list.innerHTML = `<li class="audit-empty">Erreur : ${e.message}</li>`;
+    list.innerHTML = `<li class="audit-empty">${escapeHtml(t('common.error', { msg: e.message }))}</li>`;
   }
 }
 
@@ -801,18 +806,18 @@ function openSearch() {
 function closeSearch() { $('searchOverlay').classList.remove('open'); }
 
 function renderSearchResults(data) {
-  $('searchMeta').textContent = `${data.results.length} instance(s) avec des résultats, sur ${data.instancesSearched} interrogée(s).`;
+  $('searchMeta').textContent = t('search.meta', { found: data.results.length, total: data.instancesSearched });
   if (!data.results.length) {
-    $('searchResults').innerHTML = '<p class="audit-empty">Aucun résultat.</p>';
+    $('searchResults').innerHTML = `<p class="audit-empty">${escapeHtml(t('search.none'))}</p>`;
     return;
   }
   $('searchResults').innerHTML = data.results.map(r => {
     const inst = state.instances.find(i => i.id === r.instanceId);
-    const envHtml = r.environment ? `<span class="env-badge ${ENV_CLASSES[r.environment]}">${ENV_LABELS[r.environment]}</span>` : '';
+    const envHtml = r.environment ? `<span class="env-badge ${ENV_CLASSES[r.environment]}">${envLabel(r.environment)}</span>` : '';
     const stackItems = r.stacks.map(s => `
       <li>
         <div class="search-item-name" title="${escapeHtml(s.name)}">📚 ${escapeHtml(s.name)}</div>
-        <div class="search-item-meta"><span class="search-tag">stack</span></div>
+        <div class="search-item-meta"><span class="search-tag">${escapeHtml(t('search.stack'))}</span></div>
       </li>
     `);
     const containerItems = r.containers.map(c => `
@@ -828,7 +833,7 @@ function renderSearchResults(data) {
       <div class="search-group">
         <div class="search-group-header">
           <strong>${escapeHtml(r.instanceName)}</strong> ${envHtml}
-          ${inst ? `<a href="${escapeHtml(inst.url)}" target="_blank" rel="noopener noreferrer" class="search-open">Ouvrir →</a>` : ''}
+          ${inst ? `<a href="${escapeHtml(inst.url)}" target="_blank" rel="noopener noreferrer" class="search-open">${escapeHtml(t('search.open'))}</a>` : ''}
         </div>
         <ul class="search-items">${[...stackItems, ...containerItems].join('')}</ul>
       </div>
@@ -843,18 +848,18 @@ $('searchOverlay').addEventListener('click', e => { if (e.target === $('searchOv
 $('searchForm').addEventListener('submit', async e => {
   e.preventDefault();
   const q = $('globalSearchInput').value.trim();
-  if (q.length < 2) { showToast('Tapez au moins 2 caractères', 'error'); return; }
+  if (q.length < 2) { showToast(t('search.minChars'), 'error'); return; }
   const btn = $('globalSearchBtn');
-  btn.disabled = true; btn.textContent = 'Recherche…';
+  btn.disabled = true; btn.textContent = t('search.searching');
   $('searchMeta').textContent = '';
-  $('searchResults').innerHTML = '<p class="audit-empty">Recherche en cours dans toutes les instances…</p>';
+  $('searchResults').innerHTML = `<p class="audit-empty">${escapeHtml(t('search.inProgress'))}</p>`;
   try {
     const data = await apiFetch('/api/search?q=' + encodeURIComponent(q));
     renderSearchResults(data);
   } catch (err) {
-    $('searchResults').innerHTML = `<p class="audit-empty">Erreur : ${escapeHtml(err.message)}</p>`;
+    $('searchResults').innerHTML = `<p class="audit-empty">${escapeHtml(t('common.error', { msg: err.message }))}</p>`;
   } finally {
-    btn.disabled = false; btn.textContent = 'Rechercher';
+    btn.disabled = false; btn.textContent = t('search.submit');
   }
 });
 
@@ -918,15 +923,16 @@ applyView(state.view);
 
 /* ── Export CSV ────────────────────────────────────────────────────────────── */
 function exportInstancesToCSV(instances, filenameSuffix = '') {
-  const headers = ['Nom', 'Environnement', 'URL', 'Statut', 'Version Portainer', 'Version Docker', 'Environnements', 'Conteneurs actifs', 'Conteneurs arrêtés', 'Stacks', 'Services', 'Uptime %', 'Date ajout'];
+  const headers = ['name', 'environment', 'url', 'status', 'portainer', 'docker', 'envs', 'running', 'stopped', 'stacks', 'services', 'uptime', 'added']
+    .map(k => `"${t(`csv.${k}`).replace(/"/g, '""')}"`);
   const rows = instances.map(inst => {
     const d  = state.liveData[inst.id];
     const up = state.uptime[inst.id];
     return [
       inst.name,
-      ENV_LABELS[inst.environment] || '',
+      inst.environment ? envLabel(inst.environment) : '',
       inst.url,
-      !d ? 'Chargement' : d.online ? 'En ligne' : 'Hors ligne',
+      !d ? t('common.loading') : d.online ? t('common.online') : t('common.offline'),
       d?.version || '',
       d?.dockerVersion || '',
       d?.endpointsCount ?? '',
@@ -935,7 +941,7 @@ function exportInstancesToCSV(instances, filenameSuffix = '') {
       d?.stacksCount ?? '',
       d?.servicesCount ?? '',
       up ? up.percent + '%' : '',
-      new Date(inst.createdAt).toLocaleDateString('fr-FR'),
+      new Date(inst.createdAt).toLocaleDateString(i18n.locale),
     ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
   });
 
@@ -945,7 +951,7 @@ function exportInstancesToCSV(instances, filenameSuffix = '') {
   link.href  = URL.createObjectURL(blob);
   link.download = `portainer-manager${filenameSuffix}-${new Date().toISOString().slice(0,10)}.csv`;
   link.click();
-  showToast('Export CSV téléchargé', 'success');
+  showToast(t('csv.downloaded'), 'success');
 }
 
 $('exportBtn').addEventListener('click', () => exportInstancesToCSV(state.instances));
@@ -962,7 +968,7 @@ function updateBulkToolbar() {
   const toolbar = $('bulkToolbar');
   if (state.isViewer || count === 0) { toolbar.style.display = 'none'; return; }
   toolbar.style.display = '';
-  $('bulkCount').textContent = `${count} sélectionnée${count > 1 ? 's' : ''}`;
+  $('bulkCount').textContent = tp('bulk.selected', count);
 }
 
 $('selectAllCheckbox').addEventListener('change', e => {
@@ -984,23 +990,23 @@ $('bulkExportBtn').addEventListener('click', () => {
 
 $('bulkApplyEnvBtn').addEventListener('click', async () => {
   const value = $('bulkEnvSelect').value;
-  if (!value) { showToast('Choisissez un environnement', 'error'); return; }
+  if (!value) { showToast(t('bulk.chooseEnv'), 'error'); return; }
   const environment = value === '__clear__' ? '' : value;
   const ids = Array.from(state.selected);
   const btn = $('bulkApplyEnvBtn');
-  btn.disabled = true; btn.textContent = 'Application…';
+  btn.disabled = true; btn.textContent = t('bulk.applying');
   try {
     const results = await Promise.allSettled(ids.map(id => {
       const inst = state.instances.find(i => i.id === id);
       return apiFetch(`/api/instances/${id}`, { method: 'PUT', body: JSON.stringify({ name: inst.name, url: inst.url, environment, notes: inst.notes || '' }) });
     }));
     const failed = results.filter(r => r.status === 'rejected').length;
-    showToast(failed ? `${ids.length - failed} mise(s) à jour, ${failed} échec(s)` : `${ids.length} instance(s) mise(s) à jour`, failed ? 'error' : 'success');
+    showToast(failed ? t('bulk.partial', { ok: ids.length - failed, failed }) : tp('bulk.updated', ids.length), failed ? 'error' : 'success');
     state.selected.clear();
     $('bulkEnvSelect').value = '';
     await loadInstances();
   } finally {
-    btn.disabled = false; btn.textContent = 'Appliquer';
+    btn.disabled = false; btn.textContent = t('bulk.apply');
   }
 });
 
@@ -1058,10 +1064,10 @@ async function loadCurrentUser() {
     if (user?.username) {
       const el = $('currentUser');
       const name = escapeHtml(user.username);
-      const tags = [user.method === 'oidc' ? 'SSO' : '', user.role === 'viewer' ? 'lecture seule' : ''].filter(Boolean).join(' · ');
-      el.title = `Connecté en tant que ${user.username}`;
+      const tags = [user.method === 'oidc' ? 'SSO' : '', user.role === 'viewer' ? t('user.readOnly') : ''].filter(Boolean).join(' · ');
+      el.title = t('user.connectedAs', { name: user.username });
       el.innerHTML = `<span class="user-avatar">${escapeHtml(user.username.charAt(0).toUpperCase())}</span>
-        <span class="user-text"><strong>${name}</strong>${tags ? `<span class="user-tags">${tags}</span>` : ''}</span>`;
+        <span class="user-text"><strong>${name}</strong>${tags ? `<span class="user-tags">${escapeHtml(tags)}</span>` : ''}</span>`;
       el.style.display = '';
     }
     state.isViewer = user?.role === 'viewer';
@@ -1079,7 +1085,7 @@ async function loadAppVersion() {
     const outdated = isOutdated(state.appVersion.current, state.appVersion.latest);
     badge.textContent = 'v' + state.appVersion.current;
     badge.classList.toggle('outdated', !!outdated);
-    if (outdated) badge.title = `v${state.appVersion.latest} disponible sur GitHub`;
+    if (outdated) badge.title = t('app.availableOnGithub', { v: state.appVersion.latest });
     renderAboutStatus();
   } catch {}
 }
@@ -1090,8 +1096,8 @@ function renderAboutStatus() {
   const { current, latest } = state.appVersion;
   const outdated = isOutdated(current, latest);
   el.innerHTML = outdated
-    ? `<span class="status-dot off"></span> Version <strong>v${current}</strong> — <strong style="color:var(--warning)">v${latest} disponible</strong>`
-    : `<span class="status-dot on"></span> Version <strong>v${current}</strong> — à jour`;
+    ? `<span class="status-dot off"></span> ${escapeHtml(t('about.version'))} <strong>v${escapeHtml(current)}</strong> — <strong class="text-warning">${escapeHtml(t('card.updateAvailable', { v: latest }))}</strong>`
+    : `<span class="status-dot on"></span> ${escapeHtml(t('about.version'))} <strong>v${escapeHtml(current)}</strong> — ${escapeHtml(t('about.upToDate'))}`;
 }
 
 /* ── Init ──────────────────────────────────────────────────────────────────── */
